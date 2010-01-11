@@ -36,7 +36,7 @@ def _get_firefox_nt_profile_dir ():
         logging.error('Cannot load winreg -- running windows and win32api loaded?')
     key = _winreg.OpenKey(_winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders')
     try:
-        result = _winreg.QueryValueEx(key, 'AppData')
+        ret = _winreg.QueryValueEx(key, 'AppData')
     except WindowsError:
         return None
     else:
