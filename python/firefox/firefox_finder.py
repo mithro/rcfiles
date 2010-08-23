@@ -41,10 +41,10 @@ def _get_firefox_nt_profile_dir ():
         return None
     else:
         key.Close()
-        if ret[1] == _winreg.REG_EXPAND_SZ:
-            result = win32api.ExpandEnvironmentStrings(ret[0])
+        if result[1] == _winreg.REG_EXPAND_SZ:
+            result = win32api.ExpandEnvironmentStrings(result[0])
         else:
-            result = ret[0]
+            result = result[0]
 
     return _get_firefox_profile_dir(os.path.join(result, r'Mozilla\Firefox\Profiles'))
 
