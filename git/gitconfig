@@ -1,0 +1,10 @@
+[user]
+	name = Tim 'mithro' Ansell
+	email = mithro@mithis.com
+[core]
+	excludesfile = ~/.gitignore
+[color]
+	ui = auto
+[gc]
+	autopacklimit = 0
+	auto = 0
