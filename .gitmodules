@@ -1,0 +1,3 @@
+[submodule "ssh/keys"]
+	path = ssh/keys
+	url = git@github.com:mithro/rcfiles-sshkeys.git
