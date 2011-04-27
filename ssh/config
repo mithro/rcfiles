@@ -1,0 +1,34 @@
+Host *
+  # Check for sshfp keys in DNS
+  VerifyHostKeyDNS yes
+  # Use a control channel, use -S none to disable.
+  ControlPath ~/.ssh/master-%r@%h:%p
+  ControlMaster auto
+  # Keep those connections alive!
+  TCPKeepAlive yes
+
+Host github.com
+  User git
+  Hostname github.com
+
+Host *.mithis.com
+  User tim
+
+Host lex.mithis.com
+  # Forward Munin
+  LocalForward localhost:1080 localhost:8080
+
+Host storage.mithis.com
+  # Foward transmission bittorrent client
+  LocalForward localhost:9091 localhost:9091
+  # Forward VNC for local VMs
+  LocalForward localhost:5900 localhost:5900
+  LocalForward localhost:5901 localhost:5901
+  LocalForward localhost:5903 localhost:5902
+  LocalForward localhost:5904 localhost:5904
+
+Host labs
+  HostName labs.openaustralia.org
+  Port 443
+  User tim
+  TCPKeepAlive yes
