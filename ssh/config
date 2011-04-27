@@ -2,15 +2,21 @@ Host *
   # Check for sshfp keys in DNS
   VerifyHostKeyDNS yes
   # Use a control channel, use -S none to disable.
-  ControlPath ~/.ssh/master-%r@%h:%p
+  ControlPath ~/.ssh/tmp/master-%r@%h:%p
   ControlMaster auto
   # Keep those connections alive!
   TCPKeepAlive yes
+  ServerAliveInterval 5
 
-Host github.com
-  User git
-  Hostname github.com
+# Sourceforge
+Host *.sf.net
+	User mithro
+	IdentityFile ~/.ssh/keys/sf_key_new
+Host *.sourceforge.net
+	User mithro
+	IdentityFile ~/.ssh/keys/sf_key_new
 
+# MITHIS Hosts
 Host *.mithis.com
   User tim
 
@@ -27,8 +33,54 @@ Host storage.mithis.com
   LocalForward localhost:5903 localhost:5902
   LocalForward localhost:5904 localhost:5904
 
+# Thousand Parsec hosts
+Host *.thousandparsec.net
+	User tim
+	IdentityFile ~/rcfiles/ssh/keys/misc_key
+
+# github
+Host github.com
+	HostName github.com
+	User git
+	IdentityFile ~/rcfiles/ssh/keys/misc_key
+
+Host gh
+	HostName github.com
+	User git
+	IdentityFile ~/rcfiles/ssh/keys/misc_key
+
+# Other Hosts
 Host labs
-  HostName labs.openaustralia.org
-  Port 443
-  User tim
-  TCPKeepAlive yes
+	HostName labs.openaustralia.org
+	User tim
+	Port 443
+	IdentityFile ~/rcfiles/ssh/keys/misc_key
+
+Host au.pycon.org
+	IdentityFile ~/rcfiles/ssh/keys/misc_key
+
+# Setup a Local SOCKS5 proxy, useful on dangerous networks.
+Host socks
+	HostName lex.mithis.com
+	User tim
+	IdentityFile ~/rcfiles/ssh/keys/misc_key
+	DynamicForward 1080
+	ServerAliveInterval 60
+
+## Tunnels
+#Tunnelling through an anonymous HTTP proxy
+#Host ft-proxy
+#	HostName free-tunnel.net
+#	Port 443
+#	User tim
+#	IdentityFile ~/rcfiles/ssh/keys/misc_key
+#	ProxyCommand connect %h %p
+#
+#Tunnelling through an authenticated HTTP proxy
+#Host ft-auth-proxy
+#	HostName free-tunnel.net
+#	Port 443
+#	User tim
+#	IdentityFile ~/rcfiles/ssh/keys/misc_key
+#	ProxyCommand ~/rcfiles/ssh/connect -H <username>@<proxy host>:<proxy port> %h %p
+
