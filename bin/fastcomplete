@@ -1,4 +1,4 @@
-#! /usr/bin/python -S
+#!/usr/bin/python -SE
 #
 # Copyright 2008 Google Inc. All Rights Reserved.
 
@@ -126,7 +126,7 @@ def link(src, dst, verbose=False):
   else:
     f = file(dst, 'w')
     f.write("""\
-#! /usr/bin/python -S
+#!/usr/bin/python -SE
 import os, sys
 os.execv("%s", ["%s"]+sys.argv[1:])
 """ % (src, src))
