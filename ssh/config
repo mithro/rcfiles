@@ -1,13 +1,3 @@
-Host *
-  # Check for sshfp keys in DNS
-  VerifyHostKeyDNS yes
-  # Use a control channel, use -S none to disable.
-  ControlPath ~/.ssh/tmp/master-%r@%h:%p
-  ControlMaster auto
-  # Keep those connections alive!
-  TCPKeepAlive yes
-  ServerAliveInterval 5
-
 # Sourceforge
 Host *.sf.net
 	User mithro
@@ -48,11 +38,15 @@ Host github.com
 	HostName github.com
 	User git
 	IdentityFile ~/rcfiles/ssh/keys/misc_key
+  	ControlPath none
+  	ControlMaster no
 
 Host gh
 	HostName github.com
 	User git
 	IdentityFile ~/rcfiles/ssh/keys/misc_key
+  	ControlPath none
+  	ControlMaster no
 
 # Other Hosts
 Host labs
@@ -89,3 +83,13 @@ Host socks
 #	IdentityFile ~/rcfiles/ssh/keys/misc_key
 #	ProxyCommand ~/rcfiles/ssh/connect -H <username>@<proxy host>:<proxy port> %h %p
 
+# Default Options
+Host *
+  # Check for sshfp keys in DNS
+  VerifyHostKeyDNS yes
+  # Use a control channel, use -S none to disable.
+  ControlPath ~/.ssh/tmp/master-%r@%h:%p
+  ControlMaster auto
+  # Keep those connections alive!
+  TCPKeepAlive yes
+  ServerAliveInterval 5
