@@ -7,28 +7,29 @@ Host *.sourceforge.net
 	IdentityFile ~/.ssh/keys/sf_key_new
 
 # MITHIS Hosts
-Host *.mithis.com
-  User tim
-
 Host lex.mithis.com
-  # Forward Munin
-  LocalForward localhost:1080 localhost:8080
+	# Forward Munin
+	LocalForward localhost:1080 localhost:8080
 
 Host storage.mithis.com
-  # Foward transmission bittorrent client
-  LocalForward localhost:9091 localhost:9091
-  # Forward VNC for local VMs
-  LocalForward localhost:5900 localhost:5900
-  LocalForward localhost:5901 localhost:5901
-  LocalForward localhost:5903 localhost:5902
-  LocalForward localhost:5904 localhost:5904
+	# Foward transmission bittorrent client
+	LocalForward localhost:9091 localhost:9091
+	# Forward VNC for local VMs
+	LocalForward localhost:5900 localhost:5900
+	LocalForward localhost:5901 localhost:5901
+	LocalForward localhost:5903 localhost:5902
+	LocalForward localhost:5904 localhost:5904
 
 Host vaio.mithis.com
-  # Forward VNC for local VMs
-  LocalForward localhost:6900 localhost:5900
-  LocalForward localhost:6901 localhost:5901
+	# Forward VNC for local VMs
+	LocalForward localhost:6900 localhost:5900
+	LocalForward localhost:6901 localhost:5901
+
+Host *.mithis.com
+	User tim
 
 # Thousand Parsec hosts
+
 Host *.thousandparsec.net
 	User tim
 	IdentityFile ~/rcfiles/ssh/keys/misc_key
@@ -38,15 +39,15 @@ Host github.com
 	HostName github.com
 	User git
 	IdentityFile ~/rcfiles/ssh/keys/misc_key
-  	ControlPath none
-  	ControlMaster no
+	ControlPath none
+	ControlMaster no
 
 Host gh
 	HostName github.com
 	User git
 	IdentityFile ~/rcfiles/ssh/keys/misc_key
-  	ControlPath none
-  	ControlMaster no
+	ControlPath none
+	ControlMaster no
 
 # Other Hosts
 Host labs
@@ -85,11 +86,11 @@ Host socks
 
 # Default Options
 Host *
-  # Check for sshfp keys in DNS
-  VerifyHostKeyDNS yes
-  # Use a control channel, use -S none to disable.
-  ControlPath ~/.ssh/tmp/master-%r@%h:%p
-  ControlMaster auto
-  # Keep those connections alive!
-  TCPKeepAlive yes
-  ServerAliveInterval 5
+	# Check for sshfp keys in DNS
+	VerifyHostKeyDNS yes
+	# Use a control channel, use -S none to disable.
+	ControlPath ~/.ssh/tmp/master-%r@%h:%p
+	ControlMaster auto
+	# Keep those connections alive!
+	TCPKeepAlive yes
+	ServerAliveInterval 5
