@@ -98,7 +98,10 @@ def filesystem(path_or_fd):
   else:
     buf = statfs(path_or_fd)
   assert buf
-  return f_types[buf.f_type]
+  try:
+    return f_types[buf.f_type]
+  except KeyError:
+    return "UNKNOWN"
 
 
 # Constants for filesystem magic
