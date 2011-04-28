@@ -100,15 +100,29 @@ def get_options():
   parser.add_option(
       "-d", "--tabcachedir", dest="tabcachedir", action="store", type="string",
       help="Override the location of the tabcachedir.")
+  parser.add_option(
+      "-v", "--verbose", dest="verbose", action="store_true",
+      help="Output a line for every command found.")
   return parser.parse_args()
 
 
-def link(src, dst):
-  realpath = os.path.realpath(src)
+def link(src, dst, verbose=False):
+  try:
+    fs = statfs.filesystem(src)
+  except OSError, e:
+    fs = "UNKNOWN"
+    sys.stderr.write("# Unable to fstat %s (%s) assuming remote FS\n" % (src, e))
 
-  fs = statfs.filesystem(realpath)
-  if fs not in REMOTEFS:
+  try:
+    realpath = os.path.realpath(src)
+    rfs = statfs.filesystem(realpath)
+  except OSError, e:
+    rfs = "UNKNOWN"
+    sys.stderr.write("# Unable to fstat %s (%s) assuming remote FS\n" % (realpath, e))
+
+  if fs not in REMOTEFS and rfs not in REMOTEFS:
     os.symlink(src, dst)
+    return "symlink"
   else:
     f = file(dst, 'w')
     f.write("""\
@@ -118,6 +132,7 @@ os.execv("%s", ["%s"]+sys.argv[1:])
 """ % (src, src))
     f.close()
     os.chmod(dst, 0755)
+    return "execv"
 
 
 def main(argv):
@@ -180,6 +195,9 @@ def main(argv):
     # Go though everything in the path
     seen = set()
     for pbit in path.split(':'):
+      shadowed = []
+      rpbit = os.path.realpath(pbit)
+
       sys.stderr.write("# Looking in: %s" % pbit)
       if pbit in seen:
         sys.stderr.write(" (already seen, skipping)\n")
@@ -187,34 +205,41 @@ def main(argv):
       else:
         seen.add(pbit)
 
-      if statfs.filesystem(pbit) not in REMOTEFS:
-        sys.stderr.write(" (symlink)\n")
-      else:
-        sys.stderr.write(" (execv)\n")
-
       try:
         files = os.listdir(pbit)
       except OSError, e:
-        print "#", e
+        sys.stderr.write(" (%s)" % e)
         continue
+
+      sys.stderr.write('\n')
 
       for filename in files:
         src = os.path.join(pbit, filename)
         dst = os.path.join(cachedir, filename)
 
+        rpath = os.path.realpath(src)
+        if options.verbose:
+          sys.stderr.write('# %s (%s) - ' % (src, rpath))
+
         # Skip directories
         if os.path.isdir(src):
-          continue
+          if options.verbose:
+            sys.stderr.write('is a directory\n')
 
         # Only consider things which are executable
-        if not os.access(src, os.X_OK):
-          continue
+        elif not os.access(src, os.X_OK):
+          if options.verbose:
+            sys.stderr.write('not executable\n')
 
         # Things in the path first go first
-        if os.path.exists(dst):
-          continue
+        elif os.path.exists(dst):
+          if options.verbose:
+            sys.stderr.write('is a shadowed\n')
 
-        link(src, dst)
+        else:
+          type = link(src, dst, options.verbose)
+          if options.verbose:
+            sys.stderr.write('%s\n' % type)
 
   # Listing the directory to get it into the mem cache
   sys.stderr.write("# Found %s commands\n" % len(os.listdir(cachedir)))
