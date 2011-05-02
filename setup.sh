@@ -4,7 +4,6 @@
 RCFILES=~/rcfiles
 
 function ssh {
-	mkdir -p ~/.ssh
 	ln -sf $RCFILES/ssh/config ~/.ssh/config
 
 	# Clear out the keys directory
@@ -19,6 +18,8 @@ function ssh {
 				cd $RCFILES
 				git submodule init ssh/keys
 				git submodule update ssh/keys
+				# Fix permissions
+				chmod 600 ~/.ssh/keys/*
 			)
 			break;;
 		[Nn]* ) 
@@ -32,6 +33,13 @@ function ssh {
 		* ) echo "Please answer yes or no.";;
 	    esac
 	done
+
+	# Copy the keys accross
+	rm -rf ~/.ssh/keys
+	mkdir -p ~/.ssh/keys
+	chmod 700 ~/.ssh/keys
+	cp $RCFILES/ssh/keys/* ~/.ssh/keys/
+	chmod 600 ~/.ssh/keys/*
 }
 
 function linkit {
