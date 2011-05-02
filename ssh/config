@@ -32,20 +32,20 @@ Host *.mithis.com
 
 Host *.thousandparsec.net
 	User tim
-	IdentityFile ~/rcfiles/ssh/keys/misc_key
+	IdentityFile ~/.ssh/keys/misc_key
 
 # github
 Host github.com
 	HostName github.com
 	User git
-	IdentityFile ~/rcfiles/ssh/keys/misc_key
+	IdentityFile ~/.ssh/keys/misc_key
 	ControlPath none
 	ControlMaster no
 
 Host gh
 	HostName github.com
 	User git
-	IdentityFile ~/rcfiles/ssh/keys/misc_key
+	IdentityFile ~/.ssh/keys/misc_key
 	ControlPath none
 	ControlMaster no
 
@@ -54,16 +54,16 @@ Host labs
 	HostName labs.openaustralia.org
 	User tim
 	Port 443
-	IdentityFile ~/rcfiles/ssh/keys/misc_key
+	IdentityFile ~/.ssh/keys/misc_key
 
 Host au.pycon.org
-	IdentityFile ~/rcfiles/ssh/keys/misc_key
+	IdentityFile ~/.ssh/keys/misc_key
 
 # Setup a Local SOCKS5 proxy, useful on dangerous networks.
 Host socks
 	HostName lex.mithis.com
 	User tim
-	IdentityFile ~/rcfiles/ssh/keys/misc_key
+	IdentityFile ~/.ssh/keys/misc_key
 	DynamicForward 1080
 	ServerAliveInterval 60
 
@@ -73,7 +73,7 @@ Host socks
 #	HostName free-tunnel.net
 #	Port 443
 #	User tim
-#	IdentityFile ~/rcfiles/ssh/keys/misc_key
+#	IdentityFile ~/.ssh/keys/misc_key
 #	ProxyCommand connect %h %p
 #
 #Tunnelling through an authenticated HTTP proxy
@@ -81,8 +81,8 @@ Host socks
 #	HostName free-tunnel.net
 #	Port 443
 #	User tim
-#	IdentityFile ~/rcfiles/ssh/keys/misc_key
-#	ProxyCommand ~/rcfiles/ssh/connect -H <username>@<proxy host>:<proxy port> %h %p
+#	IdentityFile ~/.ssh/keys/misc_key
+#	ProxyCommand ~/.ssh/connect -H <username>@<proxy host>:<proxy port> %h %p
 
 # Default Options
 Host *
