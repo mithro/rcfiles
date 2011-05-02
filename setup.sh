@@ -31,6 +31,7 @@ function bin {
 }
 
 function ssh {
+	mkdir -p ~/.ssh
 	ln -sf $RCFILES/ssh/config ~/.ssh/config
 
 	# Clear out the keys directory
