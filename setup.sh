@@ -1,7 +1,34 @@
 #!/bin/bash
+# -*- coding: utf-8 -*-
+# vim: set ts=4 sw=4 noet sts=4 ai:
+
 # Set Up my RC files.
 
 RCFILES=~/rcfiles
+
+function linkit {
+	if [ ! -d $RCFILES/$1 ]; then
+		echo "Must be called with a directory to link up."
+		exit 1
+	fi
+
+	for FP in $RCFILES/$1/*; do
+		F=`basename $FP`
+		if [ -f $FP ]; then
+			echo $FP "->" ~/.$F
+			ln -sf $FP ~/.$F
+		fi
+	done
+}
+
+function bin {
+	mkdir -p ~/bin
+	for FP in $RCFILES/bin; do
+		F=`basename $FP`
+		echo $FP "->" ~/.$F
+		ln -sf $FP ~/bin/$F
+	done
+}
 
 function ssh {
 	ln -sf $RCFILES/ssh/config ~/.ssh/config
@@ -28,7 +55,7 @@ function ssh {
 				ssh-keygen -t rsa -f ~/.ssh/id_rsa
 			fi
 			# Link up the misc_key
-				ln -sf ~/.ssh/id_rsa $RCFILES/ssh/keys/misc_key
+			ln -sf ~/.ssh/id_rsa $RCFILES/ssh/keys/misc_key
 			break;;
 		* ) echo "Please answer yes or no.";;
 	    esac
@@ -42,22 +69,9 @@ function ssh {
 	chmod 600 ~/.ssh/keys/*
 }
 
-function linkit {
-	if [ ! -d $RCFILES/$1 ]; then
-		echo "Must be called with a directory to link up."
-		exit 1
-	fi
-
-	for FP in $RCFILES/$1/*; do
-		F=`basename $FP`
-		if [ -f $FP ]; then
-			echo $FP "->" ~/.$F
-			ln -sf $FP ~/.$F
-		fi
-	done
-}
-
-ssh
 linkit bash
 linkit git
 linkit tmux
+
+ssh
+bin
