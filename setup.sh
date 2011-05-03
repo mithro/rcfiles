@@ -23,7 +23,7 @@ function linkit {
 
 function bin {
 	mkdir -p ~/bin
-	for FP in $RCFILES/bin; do
+	for FP in $RCFILES/bin/*; do
 		F=`basename $FP`
 		echo $FP "->" ~/.$F
 		ln -sf $FP ~/bin/$F
