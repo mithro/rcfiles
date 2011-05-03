@@ -35,6 +35,7 @@ import os
 import sys
 import hashlib
 import shutil
+import time
 import optparse
 
 try:
@@ -147,44 +148,54 @@ def main(argv):
         tabcachedir_fs)
 
   path = ":".join(args).strip()
+  path_from = 'commandline'
+  if not path:
+    path = os.environ['PATH'].split(':')
+    path_from = 'environ'
 
   # Figure out our real path
-  if not path:
-    # Try and find the path file
-    pathbits = []
-    for bit in os.environ['PATH'].split(':'):
-      if not bit.startswith(tabcachedir):
-        pathbits.append(bit)
-        continue
+  pathbits = []
+  for bit in os.environ['PATH'].split(':'):
+    if not bit.startswith(tabcachedir):
+      pathbits.append(bit)
+      continue
 
-      pathfile = os.path.join(bit, ".path")
-      if not os.path.exists(pathfile):
-        raise SystemError("Could not find .path file in %s!" % tabcachedir)
-      pathbits.extend(x[:-1] for x in file(pathfile).readlines())
+    pathfile = os.path.join(bit, ".path")
+    if not os.path.exists(pathfile):
+      raise SystemError("Could not find .path file in %s!" % tabcachedir)
+    pathbits.extend(x[:-1] for x in file(pathfile).readlines())
 
-    path = ":".join(pathbits)
+  assert tabcachedir not in pathbits
+  path = ":".join(pathbits)
 
   md5sum = hashlib.md5(path).hexdigest()
   cachedir = os.path.join(tabcachedir, md5sum)
 
   # Only output the path
+  sys.stderr.write("# Using cachedir %s\n" % cachedir)
   if options.path:
-    sys.stderr.write("# Using cachedir %s\n" % cachedir)
     sys.stderr.write("# Found %s commands\n" % len(os.listdir(bit)))
     print "export PATH=%s" % path
     sys.exit(1)
 
   sys.stderr.write("# Using path of %r\n" % path)
-  assert tabcachedir not in path
 
   # Remote the existing cache if we are doing a rebuild.
-  if os.path.exists(cachedir) and options.rebuild:
+  lockfile = "%s/.lock" % cachedir
+  if os.path.exists(lockfile):
+    sys.stderr.write("# Tab cache being built by another process, sleeping.")
+    while os.path.exists(lockfile):
+      sys.stderr.write(".")
+      sys.stderr.flush()
+      time.sleep(1)
+    sys.stderr.write("\n")
+  elif options.rebuild:
     shutil.rmtree(cachedir)
 
   # Create the cache
   if not os.path.exists(cachedir):
     sys.stderr.write("# Cache %s did not exist! Rebuilding....\n" % cachedir)
-    os.mkdir(cachedir)
+    os.makedirs(lockfile)
 
     # File storing the paths we searched in
     pathfile = file(os.path.join(cachedir, ".path"), 'w')
@@ -240,6 +251,8 @@ def main(argv):
           type = link(src, dst, options.verbose)
           if options.verbose:
             sys.stderr.write('%s\n' % type)
+
+    shutil.rmtree(lockfile)
 
   # Listing the directory to get it into the mem cache
   sys.stderr.write("# Found %s commands\n" % len(os.listdir(cachedir)))
