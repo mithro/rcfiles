@@ -46,8 +46,6 @@ function ssh {
 				cd $RCFILES
 				git submodule init ssh/keys
 				git submodule update ssh/keys
-				# Fix permissions
-				chmod 600 ~/.ssh/keys/*
 			)
 			break;;
 		[Nn]* ) 
