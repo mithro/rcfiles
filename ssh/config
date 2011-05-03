@@ -1,3 +1,8 @@
+# AWS
+Host *.amazonaws.com
+	User ubuntu
+	IdentityFile ~/.ssh/keys/amazon_key
+
 # Sourceforge
 Host *.sf.net
 	User mithro
