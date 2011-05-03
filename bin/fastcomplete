@@ -1,0 +1,250 @@
+#!/usr/bin/python -SE
+#
+# Copyright 2008 Google Inc. All Rights Reserved.
+
+"""Fast complete creates a local disk cache of your path.
+It's specifically designed to make bash tab complete run much faster. The
+correct fix would be to add caching to bash, but it was to hard to do so.
+
+To find out what path fastcomplete is currently using:
+  > ~tansell/bin/fastcomplete
+  # Found 3977 commands
+  export PATH=/home/tansell/bin: ... :/home/build/google3/googledata/validators:/home/build/google3/ads/db
+
+To get fastcomplete to rebuild it's cache:
+  > ~tansell/bin/fastcomplete --rebuild
+  # Using path of '/home/tansell/bin: ... :/home/build/google3/googledata/validators:/home/build/google3/ads/db'
+  # Cache /usr/local/google/users//tansell/tabcache/d7e5fb63454ae33b4a171b6437be904a did not exist! Rebuilding....
+  # Looking in: /home/tansell/bin (execv)
+  ...
+  # Looking in: /usr/bin (symlink)
+  ...
+  # Looking in: /home/build/google3/ads/db (execv)
+  # Found 3977 commands
+  export PATH=/usr/local/google/users//tansell/tabcache/d7e5fb63454ae33b4a171b6437be904a
+
+To use fastcomplete all the time add the following as the *LAST* line in your
+~/.bashrc file. Fastcomplete will echo some output to stderr so you can see
+what is happening.
+
+  # Create a cache of the command
+  eval `~tansell/bin/fastcomplete $PATH`
+"""
+
+import os
+import sys
+import hashlib
+import shutil
+import optparse
+
+try:
+  import statfs
+except ImportError:
+  import findpython
+  my_path = os.path.realpath(os.path.dirname(__file__))
+  statfs_path = "/".join([my_path, '..', 'python'])
+  sys.path.append(statfs_path)
+  import statfs
+import statfs.remotefs
+
+
+REMOTEFS = statfs.remotefs.remotefs
+
+
+__author__ = 'tansell@google.com (Tim Ansell)'
+
+
+def get_tabcachedir(override=None):
+  tabcachedir = None
+
+  if override:
+    tabcachepaths = [override]
+  else:
+    tabcachepaths = [
+        "/".join(["/var/run/tabcache", os.environ['USER']]),
+        "/".join(["/tmp/tabcache", os.environ['USER']]),
+        "/".join(["/usr/local/google/tabcache", os.environ['USER']]),
+        ]
+
+  tabcachedir = None
+  for path in tabcachepaths:
+    if os.path.exists(path):
+      tabcachedir = path
+      break
+
+  if not tabcachedir:
+    for path in tabcachepaths:
+      try:
+        os.makedirs(path)
+        tabcachedir = path
+      except OSError:
+        pass
+
+  if not tabcachedir:
+      raise SystemError("Could not find a location to put the tabcache.")
+
+  return tabcachedir
+
+
+def get_options():
+  parser = optparse.OptionParser(usage=__doc__)
+  parser.add_option(
+      "-r", "--rebuild", dest="rebuild", action="store_true",
+      help="Force a rebuild your tabcache.")
+  parser.add_option(
+      "-u", "--update", dest="rebuild", action="store_true",
+      help="Force a rebuild your tabcache.")
+  parser.add_option(
+      "-p", "--path", dest="path", action="store_true",
+      help="Output the PATH that the tabcache is using.")
+  parser.add_option(
+      "-d", "--tabcachedir", dest="tabcachedir", action="store", type="string",
+      help="Override the location of the tabcachedir.")
+  parser.add_option(
+      "-v", "--verbose", dest="verbose", action="store_true",
+      help="Output a line for every command found.")
+  return parser.parse_args()
+
+
+def link(src, dst, verbose=False):
+  try:
+    fs = statfs.filesystem(src)
+  except OSError, e:
+    fs = "UNKNOWN"
+    sys.stderr.write("# Unable to fstat %s (%s) assuming remote FS\n" % (src, e))
+
+  try:
+    realpath = os.path.realpath(src)
+    rfs = statfs.filesystem(realpath)
+  except OSError, e:
+    rfs = "UNKNOWN"
+    sys.stderr.write("# Unable to fstat %s (%s) assuming remote FS\n" % (realpath, e))
+
+  if fs not in REMOTEFS and rfs not in REMOTEFS:
+    os.symlink(src, dst)
+    return "symlink"
+  else:
+    f = file(dst, 'w')
+    f.write("""\
+#!/usr/bin/python -SE
+import os, sys
+os.execv("%s", ["%s"]+sys.argv[1:])
+""" % (src, src))
+    f.close()
+    os.chmod(dst, 0755)
+    return "execv"
+
+
+def main(argv):
+  options, args = get_options()
+
+  tabcachedir = get_tabcachedir(override=options.tabcachedir)
+  assert os.path.exists(tabcachedir)
+  tabcachedir_fs = statfs.filesystem(tabcachedir)
+  if tabcachedir_fs != 'TMPFS':
+    sys.stderr.write(
+        '# Tabcache is on %s filesystem, for speed put on a TMPFS filesystem!\n' %
+        tabcachedir_fs)
+
+  path = ":".join(args).strip()
+
+  # Figure out our real path
+  if not path:
+    # Try and find the path file
+    pathbits = []
+    for bit in os.environ['PATH'].split(':'):
+      if not bit.startswith(tabcachedir):
+        pathbits.append(bit)
+        continue
+
+      pathfile = os.path.join(bit, ".path")
+      if not os.path.exists(pathfile):
+        raise SystemError("Could not find .path file in %s!" % tabcachedir)
+      pathbits.extend(x[:-1] for x in file(pathfile).readlines())
+
+    path = ":".join(pathbits)
+
+  md5sum = hashlib.md5(path).hexdigest()
+  cachedir = os.path.join(tabcachedir, md5sum)
+
+  # Only output the path
+  if options.path:
+    sys.stderr.write("# Using cachedir %s\n" % cachedir)
+    sys.stderr.write("# Found %s commands\n" % len(os.listdir(bit)))
+    print "export PATH=%s" % path
+    sys.exit(1)
+
+  sys.stderr.write("# Using path of %r\n" % path)
+  assert tabcachedir not in path
+
+  # Remote the existing cache if we are doing a rebuild.
+  if os.path.exists(cachedir) and options.rebuild:
+    shutil.rmtree(cachedir)
+
+  # Create the cache
+  if not os.path.exists(cachedir):
+    sys.stderr.write("# Cache %s did not exist! Rebuilding....\n" % cachedir)
+    os.mkdir(cachedir)
+
+    # File storing the paths we searched in
+    pathfile = file(os.path.join(cachedir, ".path"), 'w')
+    for pbit in path.split(':'):
+      pathfile.write(pbit+"\n")
+    pathfile.close()
+
+    # Go though everything in the path
+    seen = set()
+    for pbit in path.split(':'):
+      shadowed = []
+      rpbit = os.path.realpath(pbit)
+
+      sys.stderr.write("# Looking in: %s" % pbit)
+      if pbit in seen:
+        sys.stderr.write(" (already seen, skipping)\n")
+        continue
+      else:
+        seen.add(pbit)
+
+      try:
+        files = os.listdir(pbit)
+      except OSError, e:
+        sys.stderr.write(" (%s)" % e)
+        continue
+
+      sys.stderr.write('\n')
+
+      for filename in files:
+        src = os.path.join(pbit, filename)
+        dst = os.path.join(cachedir, filename)
+
+        rpath = os.path.realpath(src)
+        if options.verbose:
+          sys.stderr.write('# %s (%s) - ' % (src, rpath))
+
+        # Skip directories
+        if os.path.isdir(src):
+          if options.verbose:
+            sys.stderr.write('is a directory\n')
+
+        # Only consider things which are executable
+        elif not os.access(src, os.X_OK):
+          if options.verbose:
+            sys.stderr.write('not executable\n')
+
+        # Things in the path first go first
+        elif os.path.exists(dst):
+          if options.verbose:
+            sys.stderr.write('is a shadowed\n')
+
+        else:
+          type = link(src, dst, options.verbose)
+          if options.verbose:
+            sys.stderr.write('%s\n' % type)
+
+  # Listing the directory to get it into the mem cache
+  sys.stderr.write("# Found %s commands\n" % len(os.listdir(cachedir)))
+
+  print "export PATH=%s" % cachedir
+
+if __name__ == '__main__':
+  main(list(sys.argv))

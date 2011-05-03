@@ -3,4 +3,4 @@
 .nfs*
 .*.swp
 .*.swo
-*.pyc-2.4
+*.pyc*

@@ -1,0 +1,11 @@
+#!/usr/bin/python -SE
+"""I'm always typing 'eog xxx.pdf' this sends it to evince instead."""
+
+import sys
+import os
+args = list(sys.argv)
+args[0] = '/usr/bin/eog'
+for arg in args:
+	if arg.endswith('.pdf'):
+		args[0] = '/usr/bin/evince'
+os.execv(args[0], args)
