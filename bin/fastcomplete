@@ -32,11 +32,12 @@ what is happening.
 """
 
 import os
-import sys
+import optparse
 import hashlib
+import re
+import sys
 import shutil
 import time
-import optparse
 
 try:
   import statfs
@@ -53,6 +54,20 @@ REMOTEFS = statfs.remotefs.remotefs
 
 
 __author__ = 'tansell@google.com (Tim Ansell)'
+
+
+# List of regexs. If matched will always use the symlink method.
+# Need if you have a stupid script which does a "source gbash.sh".
+MUST_SYMLINK = [
+    r'.*gbash.*',
+    ]
+
+# List of regexs. If matched will always use the exec method.
+# Needed if you have a script which looks up the location it's being run from,
+# such as the java wrapper.
+MUSTNOT_SYMLINK = [
+    r'.*java.*',
+]
 
 
 def get_tabcachedir(override=None):
@@ -121,7 +136,20 @@ def link(src, dst, verbose=False):
     rfs = "UNKNOWN"
     sys.stderr.write("# Unable to fstat %s (%s) assuming remote FS\n" % (realpath, e))
 
-  if fs not in REMOTEFS and rfs not in REMOTEFS:
+  FORCE_SYMLINK = False
+  for pattern in MUST_SYMLINK:
+    if re.match(pattern, src):
+      FORCE_SYMLINK = True
+      break
+
+  FORCE_NOT_SYMLINK = False
+  for pattern in MUSTNOT_SYMLINK:
+    if re.match(pattern, src):
+      FORCE_NOT_SYMLINK = False
+      break
+
+  if not FORCE_NOT_SYMLINK and (
+      FORCE_SYMLINK or fs not in REMOTEFS and rfs not in REMOTEFS):
     os.symlink(src, dst)
     return "symlink"
   else:
@@ -190,7 +218,8 @@ def main(argv):
       time.sleep(1)
     sys.stderr.write("\n")
   elif options.rebuild:
-    shutil.rmtree(cachedir)
+    if os.path.exists(cachedir):
+      shutil.rmtree(cachedir)
 
   # Create the cache
   if not os.path.exists(cachedir):
