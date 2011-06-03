@@ -5,10 +5,10 @@
 # the following .zprofile file which starts tmux if it's an interactive session.
 #
 # How does this tmux setup work?
-#  * There is one "default" session called default. 
+#  * There is one "default" session called default.
 #  * When you connect you clone the "default" session (your session will be
 #    given a numeric ID and I refer to them as "unnamed sessions") and a new
-#    window is created. 
+#    window is created.
 #  * These "unnamed sessions" are reaped after they no longer have real
 #    terminals connected to them.
 #  * The "default" session has help listed on window 0. This stops this session
@@ -18,6 +18,12 @@
 #
 # If I want to keep a session around (because I have a nice tiled setup or
 # something) rename the session from a numeric ID to something human usable.
+
+if tmux -V; then
+	echo "tmux found!"
+else
+	exec bash -l
+fi
 
 # Environment variables to update.
 UPDATE_ENV="PATH DISPLAY SSH_ASKPATH SSH_AUTH_SOCK SSH_AGENT_PID SSH_CONNECTION WINDOWID XAUTHORITY XDG_SESSION_COOKIE DBUS_SESSION_BUS_ADDRESS GNOME_KEYRING_CONTROL GNOME_KEYRING_PID GNOME_KEYRING_SOCKET ORBIT_SOCKETDIR KRB5CCNAME SSH_AGENT_PID SESSION_MANAGER"
