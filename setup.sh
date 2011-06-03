@@ -23,9 +23,9 @@ function linkit {
 
 function bin {
 	mkdir -p ~/bin
-	for FP in $RCFILES/bin; do
+	for FP in $RCFILES/bin/*; do
 		F=`basename $FP`
-		echo $FP "->" ~/.$F
+		echo $FP "->" ~/bin/$F
 		ln -sf $FP ~/bin/$F
 	done
 }
@@ -46,8 +46,6 @@ function ssh {
 				cd $RCFILES
 				git submodule init ssh/keys
 				git submodule update ssh/keys
-				# Fix permissions
-				chmod 600 ~/.ssh/keys/*
 			)
 			break;;
 		[Nn]* ) 
