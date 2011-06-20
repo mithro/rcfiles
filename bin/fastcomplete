@@ -145,7 +145,7 @@ def link(src, dst, verbose=False):
   FORCE_NOT_SYMLINK = False
   for pattern in MUSTNOT_SYMLINK:
     if re.match(pattern, src):
-      FORCE_NOT_SYMLINK = False
+      FORCE_NOT_SYMLINK = True
       break
 
   if not FORCE_NOT_SYMLINK and (
