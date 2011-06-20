@@ -33,7 +33,11 @@ ENVFILE="$HOME/.update-env"
 # Dump them into a form which can be used
 echo > $ENVFILE
 for env in `echo $UPDATE_ENV`; do
-	echo "export $env=\"${(P)env}\"" >> $ENVFILE
+	if [ x"${(P)env}" = x ]; then
+		echo "unset $env" >> $ENVFILE
+	else
+		echo "export $env=\"${(P)env}\"" >> $ENVFILE
+	fi
 done
 
 if [[ ( -z "$STY" ) && ( ! -z "$SSH_CONNECTION" ) || ( x"$TERM" -eq xxterm ) ]]; then
