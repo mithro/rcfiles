@@ -25,7 +25,7 @@ function bin {
 	mkdir -p ~/bin
 	for FP in $RCFILES/bin/*; do
 		F=`basename $FP`
-		echo $FP "->" ~/.$F
+		echo $FP "->" ~/bin/$F
 		ln -sf $FP ~/bin/$F
 	done
 }
