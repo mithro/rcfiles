@@ -16,6 +16,10 @@ Host lex.mithis.com
 	# Forward Munin
 	LocalForward localhost:1080 localhost:8080
 
+# Storage accessed without the .mithis.com
+Host storage
+	User tim
+
 Host storage.mithis.com
 	# Foward transmission bittorrent client
 	LocalForward localhost:9091 localhost:9091
@@ -99,3 +103,11 @@ Host *
 	# Keep those connections alive!
 	TCPKeepAlive yes
 	ServerAliveInterval 5
+
+# Tim's Video hosts
+Host vid-collect
+	Hostname videoenc-t3500-l
+
+Host vid-encoder
+	Hostname 49.156.19.78
+	User root
