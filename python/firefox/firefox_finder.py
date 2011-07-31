@@ -19,7 +19,13 @@ def _get_firefox_profile_dir (path):
     # Open profiles.ini and read the path for the first profile
     profiles_ini_reader = ConfigParser.ConfigParser();
     profiles_ini_reader.readfp(open(profiles_ini))
-    profile_name = profiles_ini_reader.get('Profile0', 'Path', True)
+    default_profile = 'Profile0'
+    for section in profiles_ini_reader.sections():
+        if section.startswith('Profile'):
+            if profiles_ini_reader.has_option(section, 'Default') and profiles_ini_reader.getboolean(section, 'Default'):
+                default_profile = section
+
+    profile_name = profiles_ini_reader.get(default_profile, 'Path', True)
 
     profile_path = os.path.join(path, profile_name)
     if not os.path.exists(profile_path):
