@@ -1,0 +1,10 @@
+#!/usr/bin/env xdg-open
+
+[Desktop Entry]
+Version=1.0
+Type=Application
+Terminal=false
+Icon=/home/tansell/.config/google-chrome-private/logo.png
+Name[en]=Personal Chrome
+Exec=/usr/bin/google-chrome --user-data-dir="/home/tansell/.config/google-chrome-private" %U
+Name=Personal Chrome
