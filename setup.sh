@@ -71,6 +71,7 @@ function ssh {
 linkit bash
 linkit git
 linkit tmux
+linkit other
 
 ssh
 bin
