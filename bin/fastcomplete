@@ -60,6 +60,7 @@ __author__ = 'tansell@google.com (Tim Ansell)'
 # Need if you have a stupid script which does a "source gbash.sh".
 MUST_SYMLINK = [
     r'.*gbash.*',
+    r'.*googletest.*',
     ]
 
 # List of regexs. If matched will always use the exec method.
@@ -93,6 +94,7 @@ def get_tabcachedir(override=None):
       try:
         os.makedirs(path)
         tabcachedir = path
+        break
       except OSError:
         pass
 
@@ -149,7 +151,7 @@ def link(src, dst, verbose=False):
       break
 
   if not FORCE_NOT_SYMLINK and (
-      FORCE_SYMLINK or fs not in REMOTEFS and rfs not in REMOTEFS):
+      FORCE_SYMLINK or (fs not in REMOTEFS and rfs not in REMOTEFS)):
     os.symlink(src, dst)
     return "symlink"
   else:
