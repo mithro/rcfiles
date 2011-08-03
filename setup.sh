@@ -68,6 +68,9 @@ function ssh {
 	chmod 600 ~/.ssh/keys/*
 }
 
+function crontab {
+}
+
 linkit bash
 linkit git
 linkit tmux
