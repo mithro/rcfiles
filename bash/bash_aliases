@@ -27,6 +27,8 @@ esac
 
 alias emacs=vi	# Confuse other people using my system
 
+export EDITOR="gvim -f"
+
 # Getting around faster
 alias ..='cd ..'
 alias ~='cd ~'
