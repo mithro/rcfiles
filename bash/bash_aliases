@@ -1,0 +1,64 @@
+#! /bin/sh
+
+# Make rm a little safer
+alias rm="rm -i"
+
+# Better ls support
+alias ll='ls -l'
+alias la='ls -A'
+alias l='ls -CF'
+
+# Make PS nicer.
+alias ps="ps fax"
+
+# Give me vim
+case "$TERM" in
+  screen)
+    # Gvim when running under X
+    alias vi=gvim
+    alias vim=gvim
+    alias vimdiff=gvimdiff
+    ;;
+  *)
+    # Just normal vim when running on shell
+    alias vi=vim
+    ;;
+esac
+
+alias emacs=vi	# Confuse other people using my system
+
+# Getting around faster
+alias ..='cd ..'
+alias ~='cd ~'
+alias ...='cd ../..'
+function p {
+ if [ x$1 == x ]; then
+   popd
+ else
+   pushd $1
+ fi
+}
+
+# git aliases
+alias gitk="gitk --all"
+
+# Ack is a tool like grep which makes life easier
+if [ -x "/usr/bin/ack-grep" ]; then
+  # Use color for ack
+  export ACK_COLOR_FILENAME="bold blue"
+  export ACK_COLOR_MATCH="bold red"
+  alias ack='ack-grep --color'
+  alias hl='ack --color --passthru --flush'
+  alias logcolor='ACK_COLOR_MATCH="bold red" hl "ERROR.*" | ACK_COLOR_MATCH="bold purple" hl "WARN.*"'
+fi
+
+
+# Google specific alias
+alias g3='test -d google3 && echo google3 || pwd | sed "s,^\(.*\)google3.*$,\1google3,"'
+alias cdg='cd $(g3)'
+alias cdr='cd $(pwd | sed -e"s,google3,READONLY/google3," -e"s,READONLY/READONLY,,")'
+alias cdw='cd $(pwd | sed -e"s,google3,review/$(git symbolic-ref HEAD | sed -e's-.*/--')/google3," -e"s,review/.*/review/[^/]*/,,")'
+alias cdj='cdg; cd java/com/google'
+alias cdjt='cdg; cd javatests/com/google'
+alias szl=/home/build/static/projects/logs/szl
+alias prodaccess='prodaccess -f'
