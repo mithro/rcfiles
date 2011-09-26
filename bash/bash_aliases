@@ -13,7 +13,7 @@ alias ps="ps fax"
 
 # Give me vim
 case "$TERM" in
-  screen)
+  screen|xterm)
     # Gvim when running under X
     alias vi=gvim
     alias vim=gvim
