@@ -1,0 +1,111 @@
+#! /usr/bin/python2.4
+#
+# Copyright 2008 Google Inc. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+A small tool which output's UTF-8 from escaped input while still preserving
+table alignment.
+"""
+
+import sys
+import re
+
+# Characters with a unicode number above this are considered doublewidth
+DOUBLEWIDTH = 0x2dff
+
+# How to find URL encoded values
+URL = re.compile(r"%([0-9a-fA-F][0-9a-fA-F])")
+
+def output(c):
+  l = len(c)
+
+  # Replace URL encoded values with the equivalent \x version
+  c = URL.sub("\\x\\1", c)
+
+  # Find the unicode characters in \x??\x?? format on the line
+  start = c.find("\\x")
+  end   = c.rfind("\\x")
+
+  # Did we find any unicode?
+  if start == -1:
+    print c
+    return
+
+  # Get out the unicode section
+  unicode = c[start:end+4]
+
+  # Figure out the length when printed as unicode
+  u = 0
+  for w in eval(repr(unicode).replace("\\\\","\\")+".decode('utf-8')"):
+    # CJK characters require 2 spaces per character
+    if ord(w) > DOUBLEWIDTH:
+      u += 2
+    else:
+      u += 1
+
+  # Work out the amount of padding we have to add
+  i = len(unicode) - u
+
+  # Put it all back together with the extra padding
+  print "%s%s%s%s" % (c[:start], eval(repr(unicode).replace('\\\\','\\')), " "*i, c[end+4:])
+
+if len(sys.argv) > 1:
+  if sys.platform == "win32":
+    import os
+    p = os.popen("chcp 65001")
+    print p.read()
+
+  if "--help" in sys.argv:
+    print __doc__ + u"""
+# out \\xe2\\x82\\xac\\xe2\\x98\\xba \\xe2\\x98\\xba
+\u20ac\u263a
+\u263a
+
+# out
+ -in->| \\xe2\\x82\\xac\\xe2\\x98\\xba \\xe2\\x98\\xba | 28938 |
+<-out-| \u20ac\u263a                                    | 28938 |
+
+# out \\xe7\\xac\\x91\\xe8\\xaf\\x9d \\xe7\\xac\\x91
+\u7b11\u8bdd
+\u8bdd
+
+# out
+ -in->| \\xe7\\xac\\x91\\xe8\\xaf\\x9d | 28938 |
+<-out-| \u7b11\u8bdd                     | 28938 |
+
+""".encode('utf-8')
+    sys.exit(1)
+
+  # Convert each of the input arguments
+  for c in sys.argv[1:]:
+    # So we don't have to quote the arguments, replace x with \x
+    if c.find('\\') == -1:
+      c = c.replace('x', '\\x')
+    output(c)
+  sys.exit(1)
+
+# If we have no input arguments, we will instead convert the stdin
+else:
+  while True:
+    b = " "
+    while b[-1] != '\n':
+      w = sys.stdin.read(1)
+      if len(w) == 0:
+        sys.exit(1)
+
+      b += w
+    try:
+      output(b[1:-1])
+    except IOError, e:
+      sys.exit(0)

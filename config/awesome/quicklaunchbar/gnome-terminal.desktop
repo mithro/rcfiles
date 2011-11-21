@@ -1,0 +1,17 @@
+[Desktop Entry]
+Encoding=UTF-8
+Name=Terminal
+Comment=Use the command line
+TryExec=gnome-terminal
+Exec=gnome-terminal
+Icon=/home/tansell/.config/awesome/quicklaunchbar/gnome-terminal.png
+Type=Application
+X-GNOME-DocPath=gnome-terminal/index.html
+X-GNOME-Bugzilla-Bugzilla=GNOME
+X-GNOME-Bugzilla-Product=gnome-terminal
+X-GNOME-Bugzilla-Component=BugBuddyBugs
+X-GNOME-Bugzilla-Version=2.22.1
+Categories=GNOME;GTK;Utility;TerminalEmulator;
+StartupNotify=true
+X-Ubuntu-Gettext-Domain=gnome-terminal
+Position=1
