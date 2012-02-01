@@ -22,7 +22,7 @@ while true; do
 	#  * We exclude *.tmp files which are created when the backup is in progress.
 	#  * We use blowfish encryption so we use less CPU time
 	#  * We login as rsync as it's a read-only user.
-	rsync --progress --exclude \*.tmp -av --rsh="ssh -p 2222 -c blowfish" rsync@lex.mithis.com:/backups .
+	rsync --progress --exclude \*.tmp -av --fuzzy --rsh="ssh -p 2222 -c blowfish" rsync@lex.mithis.com:/backups .
 
 	sleep 3600
 done
