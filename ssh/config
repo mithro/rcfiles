@@ -72,6 +72,7 @@ Host vaio.mithis.com
 
 Host *.mithis.com
 	User tim
+	IdentityFile ~/.ssh/keys/misc_key
 
 # Thousand Parsec hosts
 Host *.thousandparsec.net
