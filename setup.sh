@@ -69,12 +69,14 @@ function ssh {
 }
 
 function crontab {
+	echo $1;
 }
 
 linkit bash
 linkit git
 linkit tmux
 linkit other
+linkit vim
 
 ssh
 bin
