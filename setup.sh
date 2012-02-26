@@ -6,18 +6,48 @@
 
 RCFILES=~/rcfiles
 
+HOSTNAME=$(hostname -f)
+DOMAIN=$(hostname -d)
+# Like mithis.com or google.com
+BASE_DOMAIN=$(hostname -f | sed -e's/.*\.\(.*\..*\)/\1/')
+
 function linkit {
 	if [ ! -d $RCFILES/$1 ]; then
 		echo "Must be called with a directory to link up."
 		exit 1
 	fi
 
-	for FP in $RCFILES/$1/*; do
+	for FP in $(ls $RCFILES/$1/* | grep -v "-"); do
 		F=`basename $FP`
+
+		rm ~/.$F 2> /dev/null
+
 		if [ -f $FP ]; then
 			echo $FP "->" ~/.$F
-			ln -sf $FP ~/.$F
+			cat $FP > ~/.$F
 		fi
+
+		# Base domain specific settings
+		FT=$FP-$DOMAIN
+		if [ -f $FT ]; then
+			echo $FT "->" ~/.$F
+			cat $FT >> ~/.$F
+		fi
+
+		# Domain specific settings
+		FD=$FP-$DOMAIN
+		if [ -f $FD ]; then
+			echo $FD "->" ~/.$F
+			cat $FD >> ~/.$F
+		fi
+
+		# Host specific settings
+		FH=$FP-$HOSTNAME
+		if [ -f $FH ]; then
+			echo $FH "->" ~/.$F
+			cat $FH >> ~/.$F
+		fi
+
 	done
 }
 
@@ -32,11 +62,9 @@ function bin {
 
 function ssh {
 	mkdir -p ~/.ssh
+	mkdir -p ~/.ssh/tmp
 	ln -sf $RCFILES/ssh/config ~/.ssh/config
 
-	# Clear out the keys directory
-	rm -rf $RCFILES/ssh/keys
-	mkdir $RCFILES/ssh/keys
 	# Update the keys directory with something.
 	while true; do
 	    read -p "Get git ssh keys? " yn
@@ -44,11 +72,20 @@ function ssh {
 		[Yy]* )
 			(
 				cd $RCFILES
-				git submodule init ssh/keys
+				# Clear out any old keys
+				if [ ! -d ssh/keys/.git ]; then
+					rm -rf ssh/keys
+					git submodule init ssh/keys
+				fi
+				# Update the keys if needed
 				git submodule update ssh/keys
 			)
 			break;;
 		[Nn]* ) 
+			# Clear out any old keys
+			rm -rf ssh/keys
+			mkdir -p $RCFILES/ssh/keys
+
 			# Generate a local key if it doesn't exist
 			if [ ! -f ~/.ssh/id_rsa ]; then
 				ssh-keygen -t rsa -f ~/.ssh/id_rsa
@@ -68,9 +105,36 @@ function ssh {
 	chmod 600 ~/.ssh/keys/*
 }
 
-function crontab {
-	echo $1;
+function ppa {
+	if [ ! -e /etc/apt/sources.list.d/mithro-personal-lucid.list ]; then
+		while true; do
+			read -p "Install personal PPA? " yn
+			case $yn in
+			[Yy]* )
+				(
+					sudo add-apt-repository ppa:mithro/personal
+					sudo bash -c "cat >> /etc/apt/preferences" <<EOF
+Explanation: Give the my personal PPA a higher priority than anything else
+Package: *
+Pin: release o=LP-PPA-mithro-personal
+Pin-Priority: 2000
+EOF
+					sudo apt-get update
+					sudo apt-get upgrade
+				)
+				break;;
+			[Nn]* )
+				break;;
+			* ) echo "Please answer yes or no.";;
+			esac
+		done
+	fi
 }
+
+function crontab {
+	echo "Setting up crontab"
+}
+
 
 linkit bash
 linkit git
@@ -80,3 +144,4 @@ linkit vim
 
 ssh
 bin
+ppa

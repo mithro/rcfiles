@@ -1,0 +1,18 @@
+# Save bash log lines..
+LASTSAVEDCMD="$(fc -l -n -1)"
+function command_log() {
+  local -i return_value=$?
+  local last_line="$(fc -l -n -1)"
+  local logfile="${HOME}/.shell_logs/${HOSTNAME}"
+  local current_ts="$(date '+%Y-%m-%d %H:%M:%S')"
+  if [ "${last_line}" != "$LASTSAVEDCMD" ]; then
+    LASTSAVEDCMD="${last_line}"
+    echo "${current_ts} [${$}%${LOGNAME}@${HOSTNAME%%.*}:${PWD}]'${last_line# }' -> ${return_value}" >> "${logfile}"
+  fi
+}
+
+trap command_log DEBUG
+
+f() {
+  grep -h "$@"~/.shell_logs/* | sort | tail -n15
+}
