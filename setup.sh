@@ -112,6 +112,8 @@ function ppa {
 			case $yn in
 			[Yy]* )
 				(
+					# Needed for add-apt-repository
+					sudo apt-get install python-software-properties
 					sudo add-apt-repository ppa:mithro/personal
 					sudo bash -c "cat >> /etc/apt/preferences" <<EOF
 Explanation: Give the my personal PPA a higher priority than anything else
@@ -131,6 +133,13 @@ EOF
 	fi
 }
 
+function pkgs {
+	sudo apt-get install \
+		tmux \
+		vim \
+		zsh
+}
+
 function crontab {
 	echo "Setting up crontab"
 }
@@ -145,3 +154,4 @@ linkit vim
 ssh
 bin
 ppa
+pkgs
