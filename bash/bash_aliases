@@ -17,7 +17,7 @@ alias vim=vim
 alias vimdiff=vimdiff
 export EDITOR="vim"
 case "$TERM" in
-  screen|xterm)
+  screen*|xterm*)
     # Gvim when running under X
     if [ -x /usr/bin/gvim ]; then
       alias vi=gvim
