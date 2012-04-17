@@ -65,9 +65,6 @@ function ssh {
 	mkdir -p ~/.ssh/tmp
 	ln -sf $RCFILES/ssh/config ~/.ssh/config
 
-	# Clear out the keys directory
-	rm -rf $RCFILES/ssh/keys
-	mkdir $RCFILES/ssh/keys
 	# Update the keys directory with something.
 	while true; do
 	    read -p "Get git ssh keys? " yn
@@ -75,11 +72,20 @@ function ssh {
 		[Yy]* )
 			(
 				cd $RCFILES
-				git submodule init ssh/keys
+				# Clear out any old keys
+				if [ ! -d ssh/keys/.git ]; then
+					rm -rf ssh/keys
+					git submodule init ssh/keys
+				fi
+				# Update the keys if needed
 				git submodule update ssh/keys
 			)
 			break;;
 		[Nn]* ) 
+			# Clear out any old keys
+			rm -rf ssh/keys
+			mkdir -p $RCFILES/ssh/keys
+
 			# Generate a local key if it doesn't exist
 			if [ ! -f ~/.ssh/id_rsa ]; then
 				ssh-keygen -t rsa -f ~/.ssh/id_rsa
@@ -106,6 +112,8 @@ function ppa {
 			case $yn in
 			[Yy]* )
 				(
+					# Needed for add-apt-repository
+					sudo apt-get install python-software-properties
 					sudo add-apt-repository ppa:mithro/personal
 					sudo bash -c "cat >> /etc/apt/preferences" <<EOF
 Explanation: Give the my personal PPA a higher priority than anything else
@@ -125,6 +133,13 @@ EOF
 	fi
 }
 
+function pkgs {
+	sudo apt-get install \
+		tmux \
+		vim \
+		zsh
+}
+
 function crontab {
 	echo "Setting up crontab"
 }
@@ -134,7 +149,9 @@ linkit bash
 linkit git
 linkit tmux
 linkit other
+linkit vim
 
 ssh
 bin
 ppa
+pkgs

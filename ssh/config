@@ -123,3 +123,11 @@ Host 172.16.1.1
 	UserKnownHostsFile /dev/null
 	ControlPath /dev/null
 	ControlMaster no
+
+# Streamti.me configuration
+Host *.streamti.me
+	User root
+
+Host portable
+	Hostname 49.156.19.78
+	User root
