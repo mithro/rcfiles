@@ -68,3 +68,5 @@ alias cdj='cdg; cd java/com/google'
 alias cdjt='cdg; cd javatests/com/google'
 alias szl=/home/build/static/projects/logs/szl
 alias prodaccess='prodaccess -f'
+
+alias less="less -R"
