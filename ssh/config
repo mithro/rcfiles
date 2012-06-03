@@ -7,7 +7,7 @@ Host *
 	ControlMaster auto
 	# Keep those connections alive!
 	TCPKeepAlive yes
-	ServerAliveInterval 5
+	ServerAliveInterval 30
 
 # AWS
 Host *.amazonaws.com
@@ -26,6 +26,7 @@ Host *.sourceforge.net
 Host lex.mithis.com
 	# Forward Munin
 	LocalForward localhost:1080 localhost:8080
+	LocalForward localhost:4200 localhost:4243
 
 ## Tunnels
 # Setup a Local SOCKS5 proxy, useful on dangerous networks.
