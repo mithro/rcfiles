@@ -1,1 +1,1 @@
-/etc/xdg/awesome/rc.lua
+rc.lua-gnome
