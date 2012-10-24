@@ -12,22 +12,26 @@ alias l='ls -CF'
 alias ps="ps fax"
 
 # Give me vim
+alias vi=vim
+alias vim=vim
+alias vimdiff=vimdiff
+export EDITOR="vim"
 case "$TERM" in
-  screen|xterm)
+  screen*|xterm*)
     # Gvim when running under X
-    alias vi=gvim
-    alias vim=gvim
-    alias vimdiff=gvimdiff
+    if [ -x /usr/bin/gvim ]; then
+      alias vi=gvim
+      alias vim=gvim
+      alias vimdiff=gvimdiff
+      export EDITOR="gvim -f"
+    fi
     ;;
   *)
     # Just normal vim when running on shell
-    alias vi=vim
     ;;
 esac
 
 alias emacs=vi	# Confuse other people using my system
-
-export EDITOR="gvim -f"
 
 # Getting around faster
 alias ..='cd ..'
@@ -64,3 +68,5 @@ alias cdj='cdg; cd java/com/google'
 alias cdjt='cdg; cd javatests/com/google'
 alias szl=/home/build/static/projects/logs/szl
 alias prodaccess='prodaccess -f'
+
+alias less="less -R"
