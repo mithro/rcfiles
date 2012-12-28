@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=awesome+
+Comment=Awsome Plus Gnome
+Exec=gnome-session --session=awesome
+TryExec=gnome-session
+Icon=
+Type=XSession
