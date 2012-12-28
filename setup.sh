@@ -144,6 +144,18 @@ function crontab {
 	echo "Setting up crontab"
 }
 
+function precise {
+	# Make gtk2.0 apps look less ugly
+	# Ubuntu repository apparently has two tools to set GTK-2.0 themes:
+	sudo apt-get install \
+		gtk-chtheme \
+		gtk-theme-switch
+
+	sudo cp -Rv precise/usr /
+}
+
+# Fix permissions
+umask 022
 
 linkit bash
 linkit git
@@ -155,3 +167,10 @@ ssh
 bin
 ppa
 pkgs
+
+# Run the Ubuntu version specific setup.
+(
+	. /etc/lsb-release
+	$DISTRIB_CODENAME
+)
+
