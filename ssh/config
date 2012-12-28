@@ -56,18 +56,28 @@ Host socks
 # Storage accessed without the .mithis.com
 Host storage
 	User tim
+	# Foward transmission bittorrent client
+	LocalForward localhost:9091 localhost:9091
+	LocalForward localhost:8081 localhost:8081
+	# Forward VNC for local VMs
+	LocalForward localhost:5900 localhost:5900
+	LocalForward localhost:5901 localhost:5901
+	LocalForward localhost:5902 localhost:5902
+	LocalForward localhost:5903 localhost:5903
 
 Host storage.mithis.com
 	# Foward transmission bittorrent client
 	LocalForward localhost:9091 localhost:9091
+	LocalForward localhost:8081 localhost:8081
 	# Forward VNC for local VMs
 	LocalForward localhost:5900 localhost:5900
 	LocalForward localhost:5901 localhost:5901
-	LocalForward localhost:5903 localhost:5902
-	LocalForward localhost:5904 localhost:5904
+	LocalForward localhost:5902 localhost:5902
+	LocalForward localhost:5903 localhost:5903
 
-Host vaio.mithis.com
+Host qnap.mithis.com
 	# Forward VNC for local VMs
+	LocalForward localhost:4243 localhost:4243
 	LocalForward localhost:6900 localhost:5900
 	LocalForward localhost:6901 localhost:5901
 
