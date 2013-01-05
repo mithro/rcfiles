@@ -7,7 +7,7 @@ Host *
 	ControlMaster auto
 	# Keep those connections alive!
 	TCPKeepAlive yes
-	ServerAliveInterval 5
+	ServerAliveInterval 30
 
 # AWS
 Host *.amazonaws.com
@@ -26,6 +26,7 @@ Host *.sourceforge.net
 Host lex.mithis.com
 	# Forward Munin
 	LocalForward localhost:1080 localhost:8080
+	LocalForward localhost:4200 localhost:4243
 
 ## Tunnels
 # Setup a Local SOCKS5 proxy, useful on dangerous networks.
@@ -55,22 +56,29 @@ Host socks
 # Storage accessed without the .mithis.com
 Host storage
 	User tim
+	# Foward transmission bittorrent client
+	LocalForward localhost:9091 localhost:9091
+	LocalForward localhost:8081 localhost:8081
+	# Forward VNC for local VMs
+	LocalForward localhost:5900 localhost:5900
+	LocalForward localhost:5901 localhost:5901
+	LocalForward localhost:5902 localhost:5902
+	LocalForward localhost:5903 localhost:5903
+	# Forward for the windows box
+	LocalForward localhost:3389 winxp:3389
 
 Host storage.mithis.com
 	# Foward transmission bittorrent client
 	LocalForward localhost:9091 localhost:9091
+	LocalForward localhost:8081 localhost:8081
 	# Forward VNC for local VMs
 	LocalForward localhost:5900 localhost:5900
 	LocalForward localhost:5901 localhost:5901
-	LocalForward localhost:5903 localhost:5902
+	LocalForward localhost:5902 localhost:5902
+	LocalForward localhost:5903 localhost:5903
 	LocalForward localhost:5904 localhost:5904
 	# Forward for the windows box
 	LocalForward localhost:3389 winxp:3389
-
-Host vaio.mithis.com
-	# Forward VNC for local VMs
-	LocalForward localhost:6900 localhost:5900
-	LocalForward localhost:6901 localhost:5901
 
 Host *.mithis.com
 	User tim
