@@ -2,7 +2,7 @@
 
 function ls {
 	LS=`which ls`
-	LINES=`$LS $@ | wc -l`
+	LINES=`$LS $@ 2> /dev/null | wc -l`
 	if [ $LINES  -gt 100 ]; then
 		echo "Output greater then 100 lines, still show? [N]:"
 		read show
