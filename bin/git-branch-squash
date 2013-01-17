@@ -1,0 +1,34 @@
+#! /bin/sh
+
+if [ x$(git diff) != x"" ]; then
+  print "Please commit your changes first!"
+  exit 1
+fi
+
+
+CURRENT_BRANCH=$(git status -b | head -1 | rgrep "^# On branch" | sed -e's/^# On branch //')
+if [ x$CURRENT_BRANCH == x"" ]; then
+  print "Not on a branch!"
+  exit 1
+fi
+
+TRUNK_BRANCH=${1:-master}
+if [ x$CURRENT_BRANCH == $TRUNK_BRANCH ]; then
+  print "On $TRUNK_BRANCH already!"
+  exit 1
+fi
+
+TEMP_BRANCH=$CURRENT_BRANCH-temp
+
+MERGEPOINT=$(git merge-base $CURRENT_BRANCH $TRUNK_BRANCH)
+
+# Create a temporary branch
+git branch $TEMP_BRANCH
+# Reset us back to the merge point
+git reset --hard $MERGEPOINT
+# Do a squash merge
+git merge --squash $TEMP_BRANCH
+# Commit the change
+git commit -a
+# Clean up the old temp name
+git branch -D $TEMP_BRANCH
