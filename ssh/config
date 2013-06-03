@@ -14,6 +14,9 @@ Host *.amazonaws.com
 	User ubuntu
 	IdentityFile ~/.ssh/keys/amazon_key
 
+Host *.timvideos.us
+	User ubuntu
+
 # Sourceforge
 Host *.sf.net
 	User mithro
@@ -111,14 +114,6 @@ Host labs
 	Port 443
 	IdentityFile ~/.ssh/keys/misc_key
 
-# Tim's Video hosts
-Host vid-collect
-	Hostname vid-collect.syd
-
-Host vid-encoder
-	Hostname 49.156.19.78
-	User root
-
 # IP addresses that change often, hence don't do checking.
 Host 192.168.1.1
 	StrictHostKeyChecking no
@@ -133,11 +128,3 @@ Host 172.16.1.1
 	UserKnownHostsFile /dev/null
 	ControlPath /dev/null
 	ControlMaster no
-
-# Streamti.me configuration
-Host *.streamti.me
-	User root
-
-Host portable
-	Hostname 49.156.19.78
-	User root
