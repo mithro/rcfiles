@@ -4,7 +4,7 @@
 
 """Fast complete creates a local disk cache of your path.
 It's specifically designed to make bash tab complete run much faster. The
-correct fix would be to add caching to bash, but it was to hard to do so.
+correct fix would be to add caching to bash, but it was too hard to do so.
 
 To find out what path fastcomplete is currently using:
   > ~tansell/bin/fastcomplete
