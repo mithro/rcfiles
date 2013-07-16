@@ -280,7 +280,17 @@ clientkeys = awful.util.table.join(
         function (c)
             c.maximized_horizontal = not c.maximized_horizontal
             c.maximized_vertical   = not c.maximized_vertical
-        end)
+        end),
+   awful.key({ modkey }, "Next",  function () awful.client.moveresize( 20,  20, -40, -40) end),
+   awful.key({ modkey }, "Prior", function () awful.client.moveresize(-20, -20,  40,  40) end),
+   awful.key({ modkey }, "Down",  function () awful.client.moveresize(  0,  20,   0,   0) end),
+   awful.key({ modkey }, "Up",    function () awful.client.moveresize(  0, -20,   0,   0) end),
+   awful.key({ modkey }, "Left",  function () awful.client.moveresize(-20,   0,   0,   0) end),
+   awful.key({ modkey }, "Right", function () awful.client.moveresize( 20,   0,   0,   0) end),
+   awful.key({ modkey, "Shift" }, "f", function (c) if awful.client.floating.get(c)
+       then awful.client.floating.delete(c);    awful.titlebar.remove(c)
+       else awful.client.floating.set(c, true); awful.titlebar.add(c) end
+   end)
 )
 
 -- Compute the maximum number of digit we need, limited to 9
@@ -350,8 +360,6 @@ awful.rules.rules = {
       properties = { size_hints_honor=false, floating=false } },
     { rule = { class = "Gnome-terminal" },
       properties = { size_hints_honor=false, floating=false } },
-    { rule = { class = "Mozillia Firefox" },
-      properties = { size_hints_honor=false, floating=false } },
 --    { rule = { class = "OpenOffice.org 3.2" },
 --      properties = { size_hints_honor=false, floating=false } },
 --    { rule = { class = "OpenOffice.org 3.2", type = "dialog" },
@@ -395,4 +403,19 @@ end)
 
 client.add_signal("focus", function(c) c.border_color = beautiful.border_focus end)
 client.add_signal("unfocus", function(c) c.border_color = beautiful.border_normal end)
+
+-- {{{ Arrange signal handler
+for s = 1, screen.count() do screen[s]:add_signal("arrange", function ()
+    local clients = awful.client.visible(s)
+    local layout = awful.layout.getname(awful.layout.get(s))
+
+    for _, c in pairs(clients) do -- Floaters are always on top
+        if   awful.client.floating.get(c) or layout == "floating"
+        then if not c.fullscreen then c.above       =  true  end
+        else                          c.above       =  false end
+    end
+  end)
+end
+-- }}}
+
 -- }}}
