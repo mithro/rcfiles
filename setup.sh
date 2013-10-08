@@ -165,7 +165,6 @@ linkit vim
 
 ssh
 bin
-ppa
 pkgs
 
 # Run the Ubuntu version specific setup.
