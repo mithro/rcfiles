@@ -83,6 +83,9 @@ Host storage.mithis.com
 	# Forward for the windows box
 	LocalForward localhost:3389 winxp:3389
 
+Host qnap.mithis.com
+	LocalForward localhost:4200 localhost:4243
+
 Host *.mithis.com
 	User tim
 	IdentityFile ~/.ssh/keys/misc_key
@@ -128,3 +131,9 @@ Host 172.16.1.1
 	UserKnownHostsFile /dev/null
 	ControlPath /dev/null
 	ControlMaster no
+
+Host edid.tv
+	HostName 209.141.34.62
+	Port 30
+	User mithro
+	IdentityFile ~/.ssh/keys/misc_key
