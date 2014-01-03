@@ -74,6 +74,10 @@ fi
 #   sleep 10; alert
 alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
 
+# Tools which need to be run as root
+# Check for "install" in the cmd line, run with sudo then.
+alias apt-get="sudo apt-get"
+
 # Google specific alias
 alias g3='test -d google3 && echo google3 || pwd | sed "s,^\(.*\)google3.*$,\1google3,"'
 alias cdg='cd $(g3)'
