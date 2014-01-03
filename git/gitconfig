@@ -10,5 +10,7 @@
 	auto = 0
 [bugzilla]
 	username = mithro@mithis.com
+[push]
+	default = matching
 [rerere]
 	enabled = true
