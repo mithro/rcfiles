@@ -8,5 +8,7 @@
 [gc]
 	autopacklimit = 0
 	auto = 0
+[bugzilla]
+	username = mithro@mithis.com
 [rerere]
 	enabled = true
