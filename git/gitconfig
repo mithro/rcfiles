@@ -8,3 +8,5 @@
 [gc]
 	autopacklimit = 0
 	auto = 0
+[rerere]
+	enabled = true
