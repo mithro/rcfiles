@@ -97,7 +97,7 @@ graph_vlabel height
 height.label height
 height.type GAUGE
 height.min 100
-height.max 1000
+height.max 1200
 """
         return
 
@@ -120,7 +120,7 @@ height.max 1000
 
             realvalue = int(value.lstrip('0'))
             assert realvalue, "Real value should be non-zero"
-            assert realvalue < 1000, "Sensor only works for less than 800cm."
+            assert realvalue < 1200, "Sensor only works for less than 1200cm."
             assert realvalue > 100, "Sensor only works for greater than 100 cm."
             data.append(realvalue)
         except Exception, e:
