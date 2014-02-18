@@ -29,6 +29,7 @@ function linkit {
 		rm ~/.$F 2> /dev/null
 
 		# Generate a new file
+		# FIXME: Check we are not overriding any local changes!
 		TMP=~/.$F.tmp
 		for FILE_PART in "$FP-$BASE_DOMAIN" "$FP-$DOMAIN" "$FP-$HOSTNAME"; do
 			if [ -f $FILE_PART ]; then
