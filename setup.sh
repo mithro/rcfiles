@@ -152,9 +152,14 @@ function precise {
 	sudo cp -Rv precise/usr /
 }
 
+function ack {
+    curl http://beyondgrep.com/ack-2.12-single-file > ~/bin/ack && chmod 0755 ~/bin/ack
+}
+
 # Fix permissions
 umask 022
 
+linkit ack
 linkit bash
 mkdir ~/.shell_logs
 
@@ -163,6 +168,7 @@ linkit tmux
 linkit other
 linkit vim
 
+ack
 ssh
 bin
 pkgs
