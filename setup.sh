@@ -156,6 +156,8 @@ function precise {
 umask 022
 
 linkit bash
+mkdir ~/.shell_logs
+
 linkit git
 linkit tmux
 linkit other
