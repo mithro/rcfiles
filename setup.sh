@@ -11,6 +11,7 @@ DOMAIN=$(hostname -d)
 # Like mithis.com or google.com
 BASE_DOMAIN=$(hostname -f | sed -e's/.*\.\(.*\..*\)/\1/')
 
+# linkit(DIRECTORY)
 function linkit {
 	if [ ! -d $RCFILES/$1 ]; then
 		echo "Must be called with a directory to link up."
@@ -18,36 +19,32 @@ function linkit {
 	fi
 
 	for FP in $(ls $RCFILES/$1/* | grep -v "-"); do
+		if [ ! -f $FP ]; then
+			continue
+		fi
+
 		F=`basename $FP`
 
+		# Remove the old file
 		rm ~/.$F 2> /dev/null
 
-		if [ -f $FP ]; then
-			echo $FP "->" ~/.$F
-			cat $FP > ~/.$F
+		# Generate a new file
+		TMP=~/.$F.tmp
+		for FILE_PART in "$FP-$BASE_DOMAIN" "$FP-$DOMAIN" "$FP-$HOSTNAME"; do
+			if [ -f $FILE_PART ]; then
+				echo $FILE_PART "->" ~/.$F
+				cat $FILE_PART >> $TMP
+			fi
+		done
+		echo -n $FP "->" ~/.$F
+		if [ -f $TMP ]; then
+			echo " (generated)"
+			cat $FP $TMP > ~/.$F
+			rm $TMP
+		else
+			echo " (linked)"
+			ln -s $FP ~/.$F
 		fi
-
-		# Base domain specific settings
-		FT=$FP-$DOMAIN
-		if [ -f $FT ]; then
-			echo $FT "->" ~/.$F
-			cat $FT >> ~/.$F
-		fi
-
-		# Domain specific settings
-		FD=$FP-$DOMAIN
-		if [ -f $FD ]; then
-			echo $FD "->" ~/.$F
-			cat $FD >> ~/.$F
-		fi
-
-		# Host specific settings
-		FH=$FP-$HOSTNAME
-		if [ -f $FH ]; then
-			echo $FH "->" ~/.$F
-			cat $FH >> ~/.$F
-		fi
-
 	done
 }
 
