@@ -89,3 +89,8 @@ alias szl=/home/build/static/projects/logs/szl
 alias prodaccess='prodaccess -f'
 
 alias less="less -R"
+
+# Bigger command aliases / functions
+for include in ~/rcfiles/bash/include/*; do
+  source $include
+done
