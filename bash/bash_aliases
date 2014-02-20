@@ -20,6 +20,7 @@ case "$TERM" in
   screen*|xterm*)
     # Gvim when running under X
     if [ -x /usr/bin/gvim ]; then
+      export UBUNTU_MENUPROXY=
       alias vi=gvim
       alias vim=gvim
       alias vimdiff=gvimdiff
