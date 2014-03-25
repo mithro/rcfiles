@@ -142,26 +142,6 @@ function crontab {
 	echo "Setting up crontab"
 }
 
-function precise {
-	# Make gtk2.0 apps look less ugly
-	# Ubuntu repository apparently has two tools to set GTK-2.0 themes:
-	sudo apt-get install \
-		gtk-chtheme \
-		gtk-theme-switch \
-		awesome
-
-	# Fix all the permission on precise/usr
-	TEMPDIR=$(mktemp -d)
-	cp -Rv precise/usr $TEMPDIR
-
-	find $TEMPDIR -type f -exec chmod 644 \{\} \+
-	find $TEMPDIR -type d -exec chmod 755 \{\} \+
-
-	sudo chown -R root:root $TEMPDIR
-	sudo cp -Rvaf $TEMPDIR/* /
-	sudo rm -rf $TEMPDIR
-}
-
 function ack {
     curl http://beyondgrep.com/ack-2.12-single-file > ~/bin/ack && chmod 0755 ~/bin/ack
 }
@@ -183,9 +163,14 @@ ssh
 bin
 pkgs
 
-# Run the Ubuntu version specific setup.
 (
-	. /etc/lsb-release
-	$DISTRIB_CODENAME
+	cd awesome
+	./setup.sh
 )
 
+
+# Run the Ubuntu version specific setup.
+#(
+#	. /etc/lsb-release
+#	$DISTRIB_CODENAME
+#)
