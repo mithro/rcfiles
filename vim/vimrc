@@ -1,3 +1,4 @@
+syntax on
 
 " Highlight in red spaces by itself
 function ShowSpaces(...)
