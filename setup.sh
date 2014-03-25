@@ -147,9 +147,19 @@ function precise {
 	# Ubuntu repository apparently has two tools to set GTK-2.0 themes:
 	sudo apt-get install \
 		gtk-chtheme \
-		gtk-theme-switch
+		gtk-theme-switch \
+		awesome
 
-	sudo cp -Rv precise/usr /
+	# Fix all the permission on precise/usr
+	TEMPDIR=$(mktemp -d)
+	cp -Rv precise/usr $TEMPDIR
+
+	find $TEMPDIR -type f -exec chmod 644 \{\} \+
+	find $TEMPDIR -type d -exec chmod 755 \{\} \+
+
+	sudo chown -R root:root $TEMPDIR
+	sudo cp -Rvaf $TEMPDIR/* /
+	sudo rm -rf $TEMPDIR
 }
 
 function ack {
