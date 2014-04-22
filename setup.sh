@@ -135,6 +135,7 @@ function pkgs {
 	sudo apt-get install \
 		tmux \
 		vim \
+		htop \
 		zsh
 }
 
