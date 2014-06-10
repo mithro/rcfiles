@@ -8,3 +8,11 @@
 [gc]
 	autopacklimit = 0
 	auto = 0
+[bugzilla]
+	username = mithro@mithis.com
+[push]
+	default = matching
+[rerere]
+	enabled = true
+[rietveld]
+	server = codereview.chromium.org

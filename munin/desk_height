@@ -1,0 +1,134 @@
+#!/usr/bin/python
+# vim: set ts=4 sw=4 et sts=4 ai:
+
+"""
+Module to monitor the height of my standing desk.
+
+I have a Maxbotix Mb1433 sensor attached to my standing desk. This appears uses
+a FT232 USB-Serial device and appears as a USB commport:
+
+> lsusb
+Bus 002 Device 017: ID 0403:6001 Future Technology Devices International, Ltd FT232 USB-Serial (UART) IC
+
+As on Ubuntu commport devices are only accessible by root or dialout, make sure
+you configure munin to run the plugin with the "dialout" group. It takes a
+while to get a stable reading, so also need to increase the timeout. 
+
+To install;
+# cp desk_height /etc/munin/plugins
+# chmod 755 /etc/munin/plugins/desk_height
+# cat > /etc/munin/plugin-conf.d/desk_height <<<EOF
+[desk_height]
+    group dialout
+    timeout 60
+EOF
+"""
+
+import fcntl
+import struct
+import sys
+import termios
+import time
+import math
+import os
+import subprocess
+
+
+class SerialPort(object):
+    def __init__(self, tty_name):
+        self.tty_name = tty_name
+        self.tty = None
+        self.old_termios = None
+        self.InitTTY()
+
+    def __del__(self):
+        if self.tty and self.old_termios:
+            fd = self.tty.fileno()
+            termios.tcsetattr(fd, termios.TCSAFLUSH, self.old_termios)
+
+    def InitTTY(self):
+        try:
+            self.tty = open(self.tty_name, 'rb', 0)
+        except IOError, e:
+            p = subprocess.Popen('groups', stdout=subprocess.PIPE)
+            groups = p.communicate()[0]
+            import getpass
+            user = getpass.getuser()
+            raise IOError("%s (I'm %s in groups primary %s secondary %s - %s)" % (e, user, os.getgid(), os.getgroups(), groups))
+        fd = self.tty.fileno()
+
+        self.old_termios = termios.tcgetattr(fd)
+        """
+http://www.maxbotix.com/articles/059.htm
+
+Com Port: Determined by hardware
+Baud: 57600 bits per second
+Data Bits: 8
+Parity: 0 / none
+Stop Bit: 1
+Flow Control: 0 / none
+"""
+        new_termios = [termios.IGNPAR,                 # iflag
+                       0,                              # oflag
+                       termios.B57600 | termios.CS8 |
+                       termios.CLOCAL | termios.CREAD, # cflag
+                       0,                              # lflag
+                       termios.B57600,                 # ispeed
+                       termios.B57600,                 # ospeed
+                       self.old_termios[6]             # special characters
+                       ]
+        termios.tcsetattr(fd, termios.TCSANOW, new_termios)
+
+        #fcntl.ioctl(self.fd, termios.TIOCMBIS, TIOCM_RTS_str)
+        control = fcntl.ioctl(fd, termios.TIOCMGET, struct.pack('I', 0))
+        fcntl.ioctl(fd, termios.TIOCMBIC, struct.pack('I', termios.TIOCM_RTS))
+        fcntl.ioctl(fd, termios.TIOCMBIC, struct.pack('I', termios.TIOCM_DTR))
+        control = fcntl.ioctl(fd, termios.TIOCMGET, struct.pack('I', 0))
+
+    def Read(self, n=1):
+        return self.tty.read(n)
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "config":
+        print """\
+graph_title Desk Height
+graph_vlabel height
+height.label height
+height.type GAUGE
+height.min 100
+height.max 1200
+"""
+        return
+
+    tty_name = '/dev/ttyUSB0'
+
+    port = SerialPort(tty_name)
+
+    data = []
+    while len(data) < 30:
+        b = ''
+        while b != '\r':
+            b = port.Read()
+
+        try:
+            d = port.Read(6)
+            assert d[0] == 'R', "Read data should start with 'R' actually [%r]%r" % (d[0], d[1:])
+            assert d[-1] == '\r', "Read data should end with '\\r' actually %r[%r]" % (d[:-1], d[-1])
+
+            value = d[1:-1]
+
+            realvalue = int(value.lstrip('0'))
+            assert realvalue, "Real value should be non-zero"
+            assert realvalue < 1200, "Sensor only works for less than 1200cm."
+            assert realvalue > 100, "Sensor only works for greater than 100 cm."
+            data.append(realvalue)
+        except Exception, e:
+            sys.stderr.write(repr(e)+"\n")
+
+    average = sum(data)/len(data)
+    print "height.value", average
+
+if __name__ == '__main__':
+    main()
+

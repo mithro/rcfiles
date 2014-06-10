@@ -14,6 +14,9 @@ Host *.amazonaws.com
 	User ubuntu
 	IdentityFile ~/.ssh/keys/amazon_key
 
+Host *.timvideos.us
+	User ubuntu
+
 # Sourceforge
 Host *.sf.net
 	User mithro
@@ -56,20 +59,32 @@ Host socks
 # Storage accessed without the .mithis.com
 Host storage
 	User tim
+	# Foward transmission bittorrent client
+	LocalForward localhost:9091 localhost:9091
+	LocalForward localhost:8081 localhost:8081
+	# Forward VNC for local VMs
+	LocalForward localhost:5900 localhost:5900
+	LocalForward localhost:5901 localhost:5901
+	LocalForward localhost:5902 localhost:5902
+	LocalForward localhost:5903 localhost:5903
+	# Forward for the windows box
+	LocalForward localhost:3389 winxp:3389
 
 Host storage.mithis.com
 	# Foward transmission bittorrent client
 	LocalForward localhost:9091 localhost:9091
+	LocalForward localhost:8081 localhost:8081
 	# Forward VNC for local VMs
 	LocalForward localhost:5900 localhost:5900
 	LocalForward localhost:5901 localhost:5901
-	LocalForward localhost:5903 localhost:5902
+	LocalForward localhost:5902 localhost:5902
+	LocalForward localhost:5903 localhost:5903
 	LocalForward localhost:5904 localhost:5904
+	# Forward for the windows box
+	LocalForward localhost:3389 winxp:3389
 
-Host vaio.mithis.com
-	# Forward VNC for local VMs
-	LocalForward localhost:6900 localhost:5900
-	LocalForward localhost:6901 localhost:5901
+Host qnap.mithis.com
+	LocalForward localhost:4200 localhost:4243
 
 Host *.mithis.com
 	User tim
@@ -102,14 +117,6 @@ Host labs
 	Port 443
 	IdentityFile ~/.ssh/keys/misc_key
 
-# Tim's Video hosts
-Host vid-collect
-	Hostname vid-collect.syd
-
-Host vid-encoder
-	Hostname 49.156.19.78
-	User root
-
 # IP addresses that change often, hence don't do checking.
 Host 192.168.1.1
 	StrictHostKeyChecking no
@@ -125,10 +132,8 @@ Host 172.16.1.1
 	ControlPath /dev/null
 	ControlMaster no
 
-# Streamti.me configuration
-Host *.streamti.me
-	User root
-
-Host portable
-	Hostname 49.156.19.78
-	User root
+Host edid.tv
+	HostName 209.141.34.62
+	Port 30
+	User mithro
+	IdentityFile ~/.ssh/keys/misc_key

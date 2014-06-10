@@ -1,0 +1,29 @@
+#! /bin/bash
+
+if [ x$INTERNAL_IP4_ADDRESS == x ]; then
+	if ! nc -z -w 2 192.168.176.1 443; then
+		echo "Unable to connect to fritz.box at 709pyrmont."
+		INTERNAL_IP4_ADDRESS=192.168.176.201
+	elif ! nc -z -w 2 192.168.179.1 443; then
+		echo "Unable to connect to fritz.box at 38arlington."
+		INTERNAL_IP4_ADDRESS=192.168.179.201
+	else
+		exit 0
+	fi
+else
+	if nc -z -w 2 $INTERNAL_IP4_ADDRESS; then
+		exit 0
+	fi
+	sleep 30
+fi
+
+
+case "$INTERNAL_IP4_ADDRESS" in
+	192.168.176.201)
+		vpnc-connect 709pyrmont
+		;;
+
+	192.168.179.201)
+		vpnc-connect 38arlington
+		;;
+esac 
