@@ -136,6 +136,9 @@ function pkgs {
 		tmux \
 		vim \
 		htop \
+		gitk \
+		ipython \
+		bpython \
 		zsh
 }
 
