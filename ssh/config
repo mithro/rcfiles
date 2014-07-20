@@ -132,8 +132,16 @@ Host 172.16.1.1
 	ControlPath /dev/null
 	ControlMaster no
 
+# TimVideos.us sites
+
 Host edid.tv
 	HostName 209.141.34.62
 	Port 30
 	User mithro
 	IdentityFile ~/.ssh/keys/misc_key
+
+Host *.slidelint.net
+	User slidelint_site
+	IdentityFile ~/.ssh/keys/misc_key
+
+
