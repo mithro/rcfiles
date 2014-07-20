@@ -5,6 +5,7 @@
 # $1 - boost1.38_1.38.0-3.dsc  - dsc file
 # $2 - 0                       - PPA version
 # $3 - hardy                   - Distro to upload for
+# $4 - personal                - PPA to upload too
 
 if [ ! -f $1 ]; then
   echo "Could not find $1"
@@ -48,4 +49,4 @@ EOF
 
 /usr/bin/debuild -S -sa
 cd ..
-dput my-ppa ${PACKAGE}_${OUR_VERSION}_source.changes
+dput $4 ${PACKAGE}_${OUR_VERSION}_source.changes
