@@ -63,12 +63,17 @@ function bin {
 function ssh {
 	mkdir -p ~/.ssh
 	mkdir -p ~/.ssh/tmp
-	ln -sf $RCFILES/ssh/config ~/.ssh/config
+	if [ ! -e ~/.ssh/config ]; then
+		ln -sf $RCFILES/ssh/config ~/.ssh/config
+	fi
+	if [ -e ~/.ssh/keys ]; then
+		ln -sf $RCFILES/ssh/keys ~/.ssh/keys
+	fi
 
 	# Update the keys directory with something.
 	while true; do
-	    read -p "Get git ssh keys? " yn
-	    case $yn in
+		read -p "Get git ssh keys? " yn
+		case $yn in
 		[Yy]* )
 			(
 				cd $RCFILES
@@ -81,11 +86,7 @@ function ssh {
 				git submodule update ssh/keys
 			)
 			break;;
-		[Nn]* ) 
-			# Clear out any old keys
-			rm -rf ssh/keys
-			mkdir -p $RCFILES/ssh/keys
-
+		[Nn]* )
 			# Generate a local key if it doesn't exist
 			if [ ! -f ~/.ssh/id_rsa ]; then
 				ssh-keygen -t rsa -f ~/.ssh/id_rsa
@@ -94,15 +95,17 @@ function ssh {
 			ln -sf ~/.ssh/id_rsa $RCFILES/ssh/keys/misc_key
 			break;;
 		* ) echo "Please answer yes or no.";;
-	    esac
+		esac
 	done
 
-	# Copy the keys accross
-	rm -rf ~/.ssh/keys
-	mkdir -p ~/.ssh/keys
-	chmod 700 ~/.ssh/keys
-	cp $RCFILES/ssh/keys/* ~/.ssh/keys/
-	chmod 600 ~/.ssh/keys/*
+	# Fix key permissions
+	chmod 600 $RCFILES/ssh/keys/*
+
+	# Set up authorized keys if a server
+	if [ $DESKTOP -ne 1 ]; then
+		cat ssh/authorized_keys >> ~/.ssh/authorized_keys
+		chmod 600 ~/.ssh/authorized_keys
+	fi
 }
 
 function ppa {
