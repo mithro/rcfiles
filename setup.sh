@@ -165,6 +165,8 @@ function ack {
 # Fix permissions
 umask 022
 
+bin
+
 linkit ack
 linkit bash
 if [ ! -d ~/.shell_logs ]; then
@@ -180,7 +182,6 @@ pkgs
 
 ack
 ssh
-bin
 
 if [ $SERVER -ne 1 ]; then
 	(
