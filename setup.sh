@@ -4,7 +4,7 @@
 
 # Set Up my RC files.
 
-DESKTOP=$(dpkg -l ubuntu-desktop > /dev/null 2>&1; echo $?)
+SERVER=$(dpkg -l ubuntu-desktop > /dev/null 2>&1; echo $?)
 
 RCFILES=~/rcfiles
 
@@ -102,7 +102,7 @@ function ssh {
 	chmod 600 $RCFILES/ssh/keys/*
 
 	# Set up authorized keys if a server
-	if [ $DESKTOP -ne 1 ]; then
+	if [ $SERVER -eq 1 ]; then
 		cat ssh/authorized_keys >> ~/.ssh/authorized_keys
 		chmod 600 ~/.ssh/authorized_keys
 	fi
@@ -147,7 +147,7 @@ function pkgs {
 		vim \
 		zsh
 
-	if [ $DESKTOP -eq 1 ]; then
+	if [ $SERVER -ne 1 ]; then
 		sudo apt-get install \
 			gitk \
 			vim-gnome
@@ -165,6 +165,8 @@ function ack {
 # Fix permissions
 umask 022
 
+bin
+
 linkit ack
 linkit bash
 if [ ! -d ~/.shell_logs ]; then
@@ -180,9 +182,8 @@ pkgs
 
 ack
 ssh
-bin
 
-if [ $DESKTOP -eq 1 ]; then
+if [ $SERVER -ne 1 ]; then
 	(
 		cd awesome
 		./setup.sh
