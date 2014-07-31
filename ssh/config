@@ -30,6 +30,11 @@ Host lex.mithis.com
 	# Forward Munin
 	LocalForward localhost:1080 localhost:8080
 	LocalForward localhost:4200 localhost:4243
+	# Forward VNC for local VMs
+	LocalForward localhost:5900 localhost:5900
+	LocalForward localhost:5901 localhost:5901
+	LocalForward localhost:5902 localhost:5902
+	LocalForward localhost:5903 localhost:5903
 
 ## Tunnels
 # Setup a Local SOCKS5 proxy, useful on dangerous networks.
