@@ -116,11 +116,14 @@ Host gh
 	ControlMaster no
 
 # Other Hosts
-Host labs
-	HostName labs.openaustralia.org
+Host dev.slidelint.net
+	HostName dev.slidelint.net
+	User slidelint_site
+
+Host prod.slidelint.net
+	HostName prod.slidelint.net
 	User tim
-	Port 443
-	IdentityFile ~/.ssh/keys/misc_key
+	Port 2222
 
 # IP addresses that change often, hence don't do checking.
 Host 192.168.1.1
