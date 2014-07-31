@@ -4,6 +4,8 @@
 
 # Set Up my RC files.
 
+DESKTOP=$(dpkg -l ubuntu-desktop > /dev/null 2>&1; echo $?)
+
 RCFILES=~/rcfiles
 
 HOSTNAME=$(hostname -f)
@@ -133,13 +135,20 @@ EOF
 
 function pkgs {
 	sudo apt-get install \
+		bpython \
+		curl \
+		git \
+		htop \
+		ipython \
 		tmux \
 		vim \
-		htop \
-		gitk \
-		ipython \
-		bpython \
 		zsh
+
+	if [ $DESKTOP -eq 1 ]; then
+		sudo apt-get install \
+			gitk \
+			vim-gnome
+	fi
 }
 
 function crontab {
@@ -162,16 +171,18 @@ linkit tmux
 linkit other
 linkit vim
 
+pkgs
+
 ack
 ssh
 bin
-pkgs
 
-(
-	cd awesome
-	./setup.sh
-)
-
+if [ $DESKTOP -eq 1 ]; then
+	(
+		cd awesome
+		./setup.sh
+	)
+fi
 
 # Run the Ubuntu version specific setup.
 #(
