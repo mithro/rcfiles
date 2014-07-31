@@ -11,6 +11,7 @@
 #   Error: database is locked
 
 find -type f -exec file \{\} \; | grep SQLite | sed -e's/: SQLite.*//' | while read db; do
+	echo "Fixing '$db'"
 	sqlite3 "$db" .tables 2>&1 | grep -i lock > /dev/null 2>&1 && export LOCKED='locked' || export LOCKED='unlocked'
 	echo $db is $LOCKED
 	if [ x$LOCKED == xlocked ]; then
