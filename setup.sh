@@ -164,7 +164,9 @@ umask 022
 
 linkit ack
 linkit bash
-mkdir ~/.shell_logs
+if [ ! -d ~/.shell_logs ]; then
+	mkdir ~/.shell_logs
+fi
 
 linkit git
 linkit tmux
