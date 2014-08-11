@@ -4,9 +4,9 @@
 Version=1.0
 Encoding=UTF-8
 Comment=The web browser from Google
-Exec=/usr/bin/google-chrome --proxy-pac-url=http://proxyconfig.corp.google.com/wpad.dat
+Exec=/usr/bin/google-chrome --proxy-pac-url=http://proxyconfig.corp.google.com/wpad.dat --password-store=basic
 Terminal=false
-Icon=/opt/google/chrome/product_logo_48.png
+Icon=/opt/google/chrome-beta/product_logo_48.png
 Type=Application
 Categories=Application;Network;
 Comment[en_AU]=The web browser from Google
