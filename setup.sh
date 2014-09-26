@@ -66,7 +66,7 @@ function ssh {
 	if [ ! -e ~/.ssh/config ]; then
 		ln -sf $RCFILES/ssh/config ~/.ssh/config
 	fi
-	if [ -e ~/.ssh/keys ]; then
+	if [ ! -e ~/.ssh/keys ]; then
 		ln -sf $RCFILES/ssh/keys ~/.ssh/keys
 	fi
 
