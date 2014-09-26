@@ -1,0 +1,8 @@
+[Cinnamon Session]
+Name=Awesome Cinnamon Session
+RequiredComponents=cinnamon;cinnamon-polkit-gnome-authentication-agent-1;cinnamon-settings-daemon;cinnamon-screensaver;nemo-autostart;nm-applet;
+RequiredProviders=windowmanager;panel;
+DefaultProvider-windowmanager=awesome
+DefaultProvider-panel=awesome
+DefaultProvider-notifications=notification-osd
+DesktopName=X-Cinnamon

@@ -1,5 +1,5 @@
 [Desktop Entry]
-Name=awesome+
+Name=awesome+gnome
 Comment=Awsome Plus Gnome
 Exec=gnome-session --session=awesome
 TryExec=gnome-session
