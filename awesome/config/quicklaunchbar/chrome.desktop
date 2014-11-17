@@ -4,7 +4,7 @@
 Version=1.0
 Encoding=UTF-8
 Comment=The web browser from Google
-Exec=/usr/bin/google-chrome --proxy-pac-url=http://proxyconfig.corp.google.com/wpad.dat --password-store=basic
+Exec=/usr/bin/google-chrome --proxy-pac-url=http://proxyconfig.corp.google.com/wpad.dat --password-store=basic --audio-buffer-size=2048
 Terminal=false
 Icon=/opt/google/chrome-beta/product_logo_48.png
 Type=Application
