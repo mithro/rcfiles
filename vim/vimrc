@@ -1,5 +1,8 @@
 colorscheme darkblue
 syntax on
+set spell
+set number
+
 
 " Highlight in red spaces by itself
 function ShowSpaces(...)

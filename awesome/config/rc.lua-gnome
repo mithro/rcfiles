@@ -120,7 +120,7 @@ menubar.utils.terminal = terminal -- Set the terminal for applications that requ
 
 -- {{{ Wibox
 -- Create a "space" for the gnome-panel object to go
-mypanel = swallow("IndicatorApplet") -- awful.widget.graph()
+mypanel = swallow("IndicatorAppletComplete") -- awful.widget.graph()
 --mypanel:set_text("  gnome-panel goes here  ")
 --mypanel:set_width(205)
 --mypanel:set_background_color(beautiful.bg_normal)

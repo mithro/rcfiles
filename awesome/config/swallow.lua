@@ -135,7 +135,7 @@ local function new(widget_name)
     ret.y = 0
     ret.height = 0
     ret.widget_fullname = string.format("%sFactory::%s", widget_name, widget_name)
-    ret.widget_prefs_dir = string.format("%s/awesome/widgets", autil.getdir("config"))
+    ret.widget_prefs_dir = string.format("%s/widgets", autil.getdir("config"))
     ret.pid = nil
 
     client.connect_signal("manage", function (c, startup) 

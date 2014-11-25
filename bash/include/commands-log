@@ -14,5 +14,5 @@ function command_log() {
 trap command_log DEBUG
 
 f() {
-  grep -h "$@"~/.shell_logs/* | sort | tail -n15
+  grep -h "$@" ~/.shell_logs/* | sort | tail -n15
 }
