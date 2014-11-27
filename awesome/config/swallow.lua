@@ -106,7 +106,9 @@ function swallow:unmanage_window()
         naughty.notify({text=string.format("%s crashed!", self.widget_fullname)})
         self.pid = nil
     end
-    self.pid, _ = autil.spawn(string.format("panel-test-applets --iid %s --size xx-small --orient top --prefs-dir %s", self.widget_fullname, self.widget_prefs_dir), false)
+    local cmd = string.format("panel-test-applets --iid %s --size xx-small --orient top --prefs-dir %s", self.widget_fullname, self.widget_prefs_dir)
+    os.execute(string.format("pkill -f '%s'", cmd))
+    self.pid, _ = autil.spawn(cmd, false)
 end
 
 function swallow:stopped(spawn_id, dont_warn)
