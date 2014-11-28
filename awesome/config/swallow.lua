@@ -42,8 +42,12 @@ end
 
 function swallow:update_client()
     if self.c then
-        return self.c:geometry({x = self.x+beautiful.border_width, y = self.y, height = self.height})
+        self.x_offset = screen[self.c.screen].geometry.x
+        self.y_offset = screen[self.c.screen].geometry.y
+        return self.c:geometry({x = self.x_offset+self.x+beautiful.border_width, y = self.y_offset+self.y, height = self.height})
     else
+        self.x_offset = 0
+        self.y_offset = 0
         return {x = 0, y = 0, height = 1, width = 1}
     end
 end
@@ -133,6 +137,8 @@ local function new(widget_name)
         end
     end
 
+    ret.x_offset = 0
+    ret.y_offset = 0
     ret.x = 0
     ret.y = 0
     ret.height = 0
