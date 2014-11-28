@@ -1,8 +1,7 @@
 ---------------------------------------------------------------------------
--- @author Uli Schlachter
--- @author dodo
--- @copyright 2010, 2011 Uli Schlachter, dodo
--- @release v3.5.5
+-- @author Tim 'mithro' Ansell
+-- @copyright 2014, Tim 'mithro' Ansell
+-- @release v0.0.1
 ---------------------------------------------------------------------------
 
 local capi =
