@@ -87,7 +87,7 @@ alias cdw='cd $(pwd | sed -e"s,google3,review/$(git symbolic-ref HEAD | sed -e's
 alias cdj='cdg; cd java/com/google'
 alias cdjt='cdg; cd javatests/com/google'
 alias szl=/home/build/static/projects/logs/szl
-alias prodaccess='prodaccess -f'
+alias prodaccess='prodaccess -g'
 
 alias less="less -R"
 
