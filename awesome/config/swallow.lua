@@ -1,8 +1,7 @@
 ---------------------------------------------------------------------------
--- @author Uli Schlachter
--- @author dodo
--- @copyright 2010, 2011 Uli Schlachter, dodo
--- @release v3.5.5
+-- @author Tim 'mithro' Ansell
+-- @copyright 2014, Tim 'mithro' Ansell
+-- @release v0.0.1
 ---------------------------------------------------------------------------
 
 local capi =
@@ -42,8 +41,12 @@ end
 
 function swallow:update_client()
     if self.c then
-        return self.c:geometry({x = self.x+beautiful.border_width, y = self.y, height = self.height})
+        self.x_offset = screen[self.c.screen].geometry.x
+        self.y_offset = screen[self.c.screen].geometry.y
+        return self.c:geometry({x = self.x_offset+self.x+beautiful.border_width, y = self.y_offset+self.y, height = self.height})
     else
+        self.x_offset = 0
+        self.y_offset = 0
         return {x = 0, y = 0, height = 1, width = 1}
     end
 end
@@ -106,7 +109,9 @@ function swallow:unmanage_window()
         naughty.notify({text=string.format("%s crashed!", self.widget_fullname)})
         self.pid = nil
     end
-    self.pid, _ = autil.spawn(string.format("panel-test-applets --iid %s --size xx-small --orient top --prefs-dir %s", self.widget_fullname, self.widget_prefs_dir), false)
+    local cmd = string.format("panel-test-applets --iid %s --size xx-small --orient top --prefs-dir %s", self.widget_fullname, self.widget_prefs_dir)
+    os.execute(string.format("pkill -f '%s'", cmd))
+    self.pid, _ = autil.spawn(cmd, false)
 end
 
 function swallow:stopped(spawn_id, dont_warn)
@@ -131,6 +136,8 @@ local function new(widget_name)
         end
     end
 
+    ret.x_offset = 0
+    ret.y_offset = 0
     ret.x = 0
     ret.y = 0
     ret.height = 0

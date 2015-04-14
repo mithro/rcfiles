@@ -1,2 +1,2 @@
 # Env var for kicad github plugin
-KIGITHUB="https://github.com/KiCad"
+export KIGITHUB="https://github.com/KiCad"
