@@ -5,7 +5,7 @@
 # $1 - boost1.38_1.38.0-3.dsc  - dsc file
 # $2 - 0                       - PPA version
 # $3 - hardy                   - Distro to upload for
-# $4 - personal                - PPA to upload too
+# $4 - ppa:mithro/personal     - PPA to upload too
 
 if [ ! -f $1 ]; then
   echo "Could not find $1"
