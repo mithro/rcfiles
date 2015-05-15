@@ -3,5 +3,5 @@ Version=1.0
 Type=Application
 Name=Awesome
 Comment=Awesome WM
-TryExec=awesome
-Exec=awesome
+TryExec=awesome --no-argb
+Exec=awesome --no-argb
