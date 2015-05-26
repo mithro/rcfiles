@@ -40,3 +40,15 @@ gsettings set org.gnome.desktop.background draw_background false        # Gnome 
 sudo apt-get install \
 	gtk-chtheme \
 	gtk-theme-switch
+
+# Set up the Canonical indicators
+dconf write /com/canonical/indicator/datetime/show-calendar true
+dconf write /com/canonical/indicator/datetime/show-clock true
+dconf write /com/canonical/indicator/datetime/show-date true
+dconf write /com/canonical/indicator/datetime/show-day true
+dconf write /com/canonical/indicator/datetime/show-events false
+dconf write /com/canonical/indicator/datetime/show-locations true
+dconf write /com/canonical/indicator/datetime/locations "['Australia/Sydney', 'UTC', 'Europe/London', 'America/Chicago', 'US/Pacific']"
+dconf write /com/canonical/indicator/keyboard/visible false
+dconf write /com/ubuntu/sound/allow-amplified-volume true
+
