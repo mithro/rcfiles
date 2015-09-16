@@ -34,17 +34,17 @@ theme.border_marked = "#003333"
 --theme.taglist_bg_focus = "#ff0000"
 
 -- Display the taglist squares
-theme.taglist_squares_sel = "/home/tansell/.config/awesome/themes/redd/taglist/squarefw.png"
-theme.taglist_squares_unsel = "/home/tansell/.config/awesome/themes/redd/taglist/squarew.png"
+theme.taglist_squares_sel = "~/.config/awesome/themes/redd/taglist/squarefw.png"
+theme.taglist_squares_unsel = "~/.config/awesome/themes/redd/taglist/squarew.png"
 
-theme.tasklist_floating_icon = "/home/tansell/.config/awesome/themes/redd/tasklist/floatingw.png"
+theme.tasklist_floating_icon = "~/.config/awesome/themes/redd/tasklist/floatingw.png"
 
 -- Variables set for theming the menu:
 -- menu_[bg|fg]_[normal|focus]
 theme.menu_bg_focus = "#660000"
 theme.menu_fg_focus = "#ffffff"
 -- menu_[border_color|border_width]
-theme.menu_submenu_icon = "/home/tansell/.config/awesome/themes/redd/submenu.png"
+theme.menu_submenu_icon = "~/.config/awesome/themes/redd/submenu.png"
 theme.menu_height   = "17"
 theme.menu_width    = "125"
 
@@ -94,7 +94,7 @@ theme.layout_tiletop = "/usr/share/awesome/themes/default/layouts/tiletopw.png"
 theme.layout_spiral  = "/usr/share/awesome/themes/default/layouts/spiralw.png"
 theme.layout_dwindle = "/usr/share/awesome/themes/default/layouts/dwindlew.png"
 
-theme.awesome_icon = "/home/tansell/.config/awesome/themes/redd/awesome16.png"
+theme.awesome_icon = "~/.config/awesome/themes/redd/awesome16.png"
 
 return theme
 -- vim: filetype=lua:expandtab:shiftwidth=4:tabstop=8:softtabstop=4:encoding=utf-8:textwidth=80

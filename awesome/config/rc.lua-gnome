@@ -48,7 +48,7 @@ end
 -- {{{ Variable definitions
 -- Themes define colours, icons, font and wallpapers.
 --beautiful.init("/usr/share/awesome/themes/default/theme.lua")
-beautiful.init("/home/tansell/.config/awesome/themes/redd/theme.lua")
+beautiful.init("~/.config/awesome/themes/redd/theme.lua")
 
 -- This is used later as the default terminal and editor to run.
 terminal = "x-terminal-emulator"
@@ -130,7 +130,7 @@ mywibox = {}
 mypromptbox = {}
 mylayoutbox = {}
 mytaglist = {}
-myquicklaunchbar = launchbar("/home/tansell/.config/awesome/quicklaunchbar/")
+myquicklaunchbar = launchbar("~/.config/awesome/quicklaunchbar/")
 mytaglist.buttons = awful.util.table.join(
                     awful.button({ }, 1, awful.tag.viewonly),
                     awful.button({ modkey }, 1, awful.client.movetotag),
