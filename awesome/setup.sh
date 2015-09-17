@@ -8,13 +8,24 @@ sudo apt-get install \
 	awesome-extra
 
 # Copy rcfiles
-cp -rf config ~/.config/awesome
+(
+	cp -rf config ~/.config/awesome
+	# Fix $HOME references
+	for FILE in $(find ~/.config/awesome -type f); do
+		sed -i -e "s^~/^$HOME/^g" $FILE
+	done
+)
 
 # Copy files over to set up a "awesome" session selectable from login screen
 (
 	# Create a temporary directory so we can set the permissions correctly.
 	TEMPDIR=$(mktemp -d)
 	cp -Rv session/* $TEMPDIR
+
+	# Fix $HOME references
+	for FILE in $(find $TEMPDIR -type f); do
+		sed -i -e "s^~/^$HOME/^g" $FILE
+	done
 
 	# Fix all the permissions / ownership
 	find $TEMPDIR -type f -exec chmod 644 \{\} \+
@@ -23,7 +34,6 @@ cp -rf config ~/.config/awesome
 
 	# Copy config files into /
 	sudo cp -Rvaf $TEMPDIR/* /
-
 	# Clean up temporary files
 	sudo rm -rf $TEMPDIR
 )
