@@ -1,0 +1,4 @@
+[GNOME Session]
+Name=GNOME Flashback (Awesome)
+RequiredComponents=gnome-panel;unity-settings-daemon;compiz;nautilus-classic;gnome-flashback-services;
+DesktopName=Unity

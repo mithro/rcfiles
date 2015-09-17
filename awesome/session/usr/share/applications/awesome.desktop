@@ -1,7 +1,17 @@
 [Desktop Entry]
-Version=1.0
 Type=Application
+Encoding=UTF-8
 Name=Awesome
-Comment=Awesome WM
-TryExec=awesome --no-argb
 Exec=awesome --no-argb
+TryExec=awesome --no-argb
+NoDisplay=true
+# name of loadable control center module
+X-GNOME-WMSettingsModule=awesome
+# autostart phase
+X-GNOME-Autostart-Phase=WindowManager
+X-GNOME-Provides=windowmanager
+# name we put on the WM spec check window
+X-GNOME-WMName=awesome
+# back compat only 
+X-GnomeWMSettingsLibrary=awesome
+X-Ubuntu-Gettext-Domain=awesome

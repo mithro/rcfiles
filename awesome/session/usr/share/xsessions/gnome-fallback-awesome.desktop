@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=GNOME Flashback (Awesome)
+Comment=This session logs you into GNOME with the traditional panel
+Exec=gnome-session --session=gnome-flashback-awesome
+TryExec=awesome
+Icon=
+Type=Application
+X-LightDM-DesktopName=Unity
+X-Ubuntu-Gettext-Domain=gnome-panel-3.0
