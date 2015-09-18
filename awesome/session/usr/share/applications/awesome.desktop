@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
 Encoding=UTF-8
-Name=Awesome
-Exec=awesome --no-argb
-TryExec=awesome --no-argb
+Name=awesome
+Exec=awesome-start
+TryExec=awesome-start
 NoDisplay=true
 # name of loadable control center module
 X-GNOME-WMSettingsModule=awesome

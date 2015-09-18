@@ -2,6 +2,7 @@
 -- @author Tim 'mithro' Ansell
 -- @copyright 2014, Tim 'mithro' Ansell
 -- @release v0.0.1
+-- vim: filetype=lua:expandtab:shiftwidth=4:tabstop=8:softtabstop=4:textwidth=80
 ---------------------------------------------------------------------------
 
 local capi =
@@ -19,7 +20,7 @@ local setmetatable = setmetatable
 local pairs = pairs
 local error = error
 local pcall = pcall
-local naughty = require("naughty")
+--local naughty = require("naughty")
 local beautiful = require("beautiful")
 
 -- wibox.widget.swallow
@@ -31,12 +32,18 @@ function swallow:draw(wibox, cr, width, height)
     self.x = x
     self.y = y
     self.height = height
+    --print("swallow:draw", self.c, width, height, self.x, self.y, self.height)
     self:update_client()
 end
 
 --- Fit the given swallow
 function swallow:fit(width, height)
-    return self.width + beautiful.border_width*2, self.height
+    --print("swallow:fit", self.c, width, height, self.width, self.height)
+    if self.width and self.height then
+        return self.width + beautiful.border_width*2, self.height
+    else
+        return 100, 1
+    end
 end
 
 function swallow:update_client()
@@ -66,7 +73,8 @@ end
 
 local aclient_focusfilter = aclient.focus.filter
 function focusfilter(c)
-    if c.class == "Panel-test-applets" then
+    --print("swallow:focusfilter")
+    if c.class == "Gnome-panel" then
         return nil
     end
     return aclient_focusfilter(c)
@@ -74,56 +82,39 @@ end
 aclient.focus.filter = focusfilter
 
 function swallow:manage_window(c, startup)
-    if startup then
-        return
-    end
---    if c.class == "Panel-test-applets" and c.name == self.widget_fullname then
-    if c.pid == self.pid then
+    --print("swallow:manage_window", c, startup, c.class, self.c)
+    if c.class == "Gnome-panel" then
         self.c = c
         aclient.floating.set(c, true)
         c['size_hints_honor'] = false
         c['skip_taskbar'] = true
         c['sticky'] = true
+        c['focus'] = false
         c['border_width'] = 0
 
         c.focus = function()
             return nil
         end
 
-        self:update_widget()
         c:connect_signal("property::geometry", function()
+            --local dim = self.c:geometry()
+            --print("property::geometry", self.c, dim['x'], dim['y'], dim['height'], dim['width'])
             self:update_widget()
         end)
+
         c:connect_signal("unmanage", function(c)
             if self.c and c.window == self.c.window then
                 self:unmanage_window()
             end
         end)
+
+        self:emit_signal("widget::updated")
     end
 end
 
 function swallow:unmanage_window()
+    --print("swallow:unmanage_window", self.c)
     self.c = nil
-    self:update_widget()
-    if self.pid then
-        naughty.notify({text=string.format("%s crashed!", self.widget_fullname)})
-        self.pid = nil
-    end
-    local cmd = string.format("panel-test-applets --iid %s --size xx-small --orient top --prefs-dir %s", self.widget_fullname, self.widget_prefs_dir)
-    os.execute(string.format("pkill -f '%s'", cmd))
-    self.pid, _ = autil.spawn(cmd, false)
-end
-
-function swallow:stopped(spawn_id, dont_warn)
-    if spawn_id == self.spawn_id then
-        self.pid = nil
-    end
-end
-
-function swallow:exit()
-    if self.pid then
-        pcall(string.format("kill -9 %i", self.pid))
-    end
 end
 
 -- Returns a new swallow
@@ -141,19 +132,12 @@ local function new(widget_name)
     ret.x = 0
     ret.y = 0
     ret.height = 0
-    ret.widget_fullname = string.format("%sFactory::%s", widget_name, widget_name)
-    ret.widget_prefs_dir = string.format("%s/widgets", autil.getdir("config"))
-    ret.pid = nil
 
     client.connect_signal("manage", function (c, startup) 
         ret:manage_window(c, startup)
     end)
-    capi.awesome.connect_signal("exit", function() 
-        ret:exit()
-    end)
 
-    -- Start the app
-    ret:unmanage_window()
+    ret:emit_signal("widget::updated")
 
     return ret
 end
