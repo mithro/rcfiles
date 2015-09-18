@@ -30,6 +30,7 @@ sudo apt-get install \
 	# Fix all the permissions / ownership
 	find $TEMPDIR -type f -exec chmod 644 \{\} \+
 	find $TEMPDIR -type d -exec chmod 755 \{\} \+
+	find $TEMPDIR/usr/bin -type f -exec chmod 755 \{\} \+
 	sudo chown -R root:root $TEMPDIR
 
 	# Copy config files into /
