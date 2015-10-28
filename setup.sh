@@ -174,8 +174,9 @@ if [ ! -d ~/.shell_logs ]; then
 fi
 
 linkit git
-linkit tmux
 linkit other
+linkit package
+linkit tmux
 linkit vim
 
 pkgs
