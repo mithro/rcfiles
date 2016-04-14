@@ -1,0 +1,2 @@
+#!/bin/bash
+for i in $(git remote); do git fetch -p $i ; done
