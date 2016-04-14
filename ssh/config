@@ -75,8 +75,8 @@ Host socks
 Host storage
 	User tim
 	# Foward transmission bittorrent client
-	LocalForward localhost:9091 localhost:9091
-	LocalForward localhost:8081 localhost:8081
+	LocalForward localhost:4000 localhost:4000
+	LocalForward localhost:8989 localhost:8989
 	# Forward VNC for local VMs
 	LocalForward localhost:5900 localhost:5900
 	LocalForward localhost:5901 localhost:5901
@@ -87,8 +87,8 @@ Host storage
 
 Host storage.mithis.com
 	# Foward transmission bittorrent client
-	LocalForward localhost:9091 localhost:9091
-	LocalForward localhost:8081 localhost:8081
+	LocalForward localhost:4000 localhost:4000
+	LocalForward localhost:8989 localhost:8989
 	# Forward VNC for local VMs
 	LocalForward localhost:5900 localhost:5900
 	LocalForward localhost:5901 localhost:5901
