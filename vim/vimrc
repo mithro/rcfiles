@@ -2,7 +2,7 @@ colorscheme darkblue
 syntax on
 set spell
 set number
-
+set hlsearch
 
 " Highlight in red spaces by itself
 function ShowSpaces(...)
