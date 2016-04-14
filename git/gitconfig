@@ -16,3 +16,5 @@
 	enabled = true
 [rietveld]
 	server = codereview.chromium.org
+[http]
+	cookiefile = ~/.gitcookies
