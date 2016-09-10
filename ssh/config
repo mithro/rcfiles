@@ -51,7 +51,7 @@ Host underwood.mithis.com
 Host socks
 	HostName lex.mithis.com
 	User tim
-	IdentityFile ~/.ssh/keys/misc_key
+	IdentityFile ~/.ssh/keys/new_misc_key
 	DynamicForward 1080
 	ServerAliveInterval 60
 
@@ -60,7 +60,7 @@ Host socks
 #	HostName lex.mithis.com
 #	Port 443
 #	User tim
-#	IdentityFile ~/.ssh/keys/misc_key
+#	IdentityFile ~/.ssh/keys/new_misc_key
 #	ProxyCommand connect %h %p
 
 #Tunnelling through an authenticated HTTP proxy
@@ -68,7 +68,7 @@ Host socks
 #	HostName lex.mithis.com
 #	Port 443
 #	User tim
-#	IdentityFile ~/.ssh/keys/misc_key
+#	IdentityFile ~/.ssh/keys/new_misc_key
 #	ProxyCommand ~/.ssh/connect -H <username>@<proxy host>:<proxy port> %h %p
 
 # Storage accessed without the .mithis.com
@@ -103,25 +103,25 @@ Host qnap.mithis.com
 
 Host *.mithis.com
 	User tim
-	IdentityFile ~/.ssh/keys/misc_key
+	IdentityFile ~/.ssh/keys/new_misc_key
 
 # Thousand Parsec hosts
 Host *.thousandparsec.net
 	User tim
-	IdentityFile ~/.ssh/keys/misc_key
+	IdentityFile ~/.ssh/keys/new_misc_key
 
 # github
 Host github.com
 	HostName github.com
 	User git
-	IdentityFile ~/.ssh/keys/misc_key
+	IdentityFile ~/.ssh/keys/new_misc_key
 	ControlPath none
 	ControlMaster no
 
 Host gh
 	HostName github.com
 	User git
-	IdentityFile ~/.ssh/keys/misc_key
+	IdentityFile ~/.ssh/keys/new_misc_key
 	ControlPath none
 	ControlMaster no
 
@@ -156,10 +156,10 @@ Host edid.tv
 	HostName 209.141.34.62
 	Port 30
 	User mithro
-	IdentityFile ~/.ssh/keys/misc_key
+	IdentityFile ~/.ssh/keys/new_misc_key
 
 Host *.slidelint.net
 	User slidelint_site
-	IdentityFile ~/.ssh/keys/misc_key
+	IdentityFile ~/.ssh/keys/new_misc_key
 
 
