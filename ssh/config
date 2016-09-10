@@ -17,14 +17,6 @@ Host *.amazonaws.com
 Host *.timvideos.us
 	User ubuntu
 
-# Sourceforge
-Host *.sf.net
-	User mithro
-	IdentityFile ~/.ssh/keys/sf_key_new
-Host *.sourceforge.net
-	User mithro
-	IdentityFile ~/.ssh/keys/sf_key_new
-
 # MITHIS Hosts
 Host lex.mithis.com
 	# Forward Munin
