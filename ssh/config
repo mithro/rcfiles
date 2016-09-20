@@ -74,6 +74,19 @@ Host storage
 	# Forward for the windows box
 	LocalForward localhost:3389 winxp:3389
 
+Host storage.fritz.box
+	# Foward transmission bittorrent client
+	LocalForward localhost:4000 localhost:4000
+	LocalForward localhost:8989 localhost:8989
+	# Forward VNC for local VMs
+	LocalForward localhost:5900 localhost:5900
+	LocalForward localhost:5901 localhost:5901
+	LocalForward localhost:5902 localhost:5902
+	LocalForward localhost:5903 localhost:5903
+	LocalForward localhost:5904 localhost:5904
+	# Forward for the windows box
+	LocalForward localhost:3389 winxp:3389
+
 Host storage.mithis.com
 	# Foward transmission bittorrent client
 	LocalForward localhost:4000 localhost:4000
