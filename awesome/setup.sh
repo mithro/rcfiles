@@ -2,6 +2,9 @@
 # -*- coding: utf-8 -*-
 # vim: set ts=4 sw=4 noet sts=4 ai:
 
+set -e
+set -x
+
 # Install awesome
 sudo apt-get install \
 	awesome \
