@@ -64,5 +64,6 @@ dconf write /com/canonical/indicator/datetime/show-day true
 dconf write /com/canonical/indicator/datetime/show-events false
 dconf write /com/canonical/indicator/datetime/show-locations true
 dconf write /com/canonical/indicator/datetime/locations "['Australia/Sydney', 'UTC', 'Europe/London', 'America/Chicago', 'US/Pacific']"
+dconf write /com/canonical/indicator/datetime/time-format "'12-hour'"
 dconf write /com/canonical/indicator/keyboard/visible false
 dconf write /com/ubuntu/sound/allow-amplified-volume true
