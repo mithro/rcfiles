@@ -63,6 +63,9 @@ dconf write /org/gnome/gnome-panel/layout/toplevel/top-panel-0/expand false
 dconf write /org/gnome/gnome-panel/layout/toplevel/top-panel-0/auto-hide true
 dconf write /org/gnome/gnome-panel/layout/toplevel/top-panel-0/auto-hide-size 0
 
+# Disable the touchpad
+dconf write /org/gnome/settings-daemon/peripherals/touchpad/touchpad-enabled false
+
 # Set up the Canonical indicators
 dconf write /com/canonical/indicator/datetime/show-calendar true
 dconf write /com/canonical/indicator/datetime/show-clock true
