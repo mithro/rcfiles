@@ -1,7 +1,0 @@
-[Desktop Entry]
-Name=awesome+cinnamon
-Comment=Awsome Plus Cinnamon
-Exec=cinnamon-session --session=awesome
-TryExec=cinnamon-session
-Icon=
-Type=XSession
