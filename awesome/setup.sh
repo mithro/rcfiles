@@ -56,6 +56,13 @@ sudo apt-get install \
 	gtk-chtheme \
 	gtk-theme-switch
 
+# Setup the panels
+dconf write /org/gnome/gnome-panel/layout/toplevel-id-list "['top-panel-0']"
+dconf write /org/gnome/gnome-panel/layout/objects/menu-bar-0/toplevel-id "'bottom-panel-0'"
+dconf write /org/gnome/gnome-panel/layout/toplevel/top-panel-0/expand false
+dconf write /org/gnome/gnome-panel/layout/toplevel/top-panel-0/auto-hide true
+dconf write /org/gnome/gnome-panel/layout/toplevel/top-panel-0/auto-hide-size 0
+
 # Set up the Canonical indicators
 dconf write /com/canonical/indicator/datetime/show-calendar true
 dconf write /com/canonical/indicator/datetime/show-clock true
