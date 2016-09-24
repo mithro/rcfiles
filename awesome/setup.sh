@@ -8,7 +8,8 @@ set -x
 # Install awesome
 sudo apt-get install \
 	awesome \
-	awesome-extra
+	awesome-extra \
+	gnome-session-flashback
 
 # Copy rcfiles
 (
