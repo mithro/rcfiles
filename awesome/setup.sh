@@ -48,7 +48,7 @@ gconftool-2 -s -t bool /apps/nautilus/preferences/show_desktop false    # Gnome 
 gsettings set org.gnome.desktop.background show-desktop-icons false     # Gnome 3 way
 
 gconftool-2 -s -t bool /desktop/gnome/background/draw_background false  # Gnome 2 way
-gsettings set org.gnome.desktop.background draw_background false        # Gnome 3 way
+#gsettings set org.gnome.desktop.background draw_background false        # Gnome 3 way
 
 # Make gtk2.0 apps look less ugly
 # Ubuntu repository apparently has two tools to set GTK-2.0 themes:
@@ -66,4 +66,3 @@ dconf write /com/canonical/indicator/datetime/show-locations true
 dconf write /com/canonical/indicator/datetime/locations "['Australia/Sydney', 'UTC', 'Europe/London', 'America/Chicago', 'US/Pacific']"
 dconf write /com/canonical/indicator/keyboard/visible false
 dconf write /com/ubuntu/sound/allow-amplified-volume true
-
