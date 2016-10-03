@@ -14,17 +14,6 @@ Host *.amazonaws.com
 	User ubuntu
 	IdentityFile ~/.ssh/keys/amazon_key
 
-Host *.timvideos.us
-	User ubuntu
-
-# Sourceforge
-Host *.sf.net
-	User mithro
-	IdentityFile ~/.ssh/keys/sf_key_new
-Host *.sourceforge.net
-	User mithro
-	IdentityFile ~/.ssh/keys/sf_key_new
-
 # MITHIS Hosts
 Host lex.mithis.com
 	# Forward Munin
@@ -49,7 +38,7 @@ Host underwood.mithis.com
 ## Tunnels
 # Setup a Local SOCKS5 proxy, useful on dangerous networks.
 Host socks
-	HostName lex.mithis.com
+	HostName underwood.mithis.com
 	User tim
 	IdentityFile ~/.ssh/keys/new_misc_key
 	DynamicForward 1080
@@ -82,6 +71,19 @@ Host storage
 	LocalForward localhost:5901 localhost:5901
 	LocalForward localhost:5902 localhost:5902
 	LocalForward localhost:5903 localhost:5903
+	# Forward for the windows box
+	LocalForward localhost:3389 winxp:3389
+
+Host storage.fritz.box
+	# Foward transmission bittorrent client
+	LocalForward localhost:4000 localhost:4000
+	LocalForward localhost:8989 localhost:8989
+	# Forward VNC for local VMs
+	LocalForward localhost:5900 localhost:5900
+	LocalForward localhost:5901 localhost:5901
+	LocalForward localhost:5902 localhost:5902
+	LocalForward localhost:5903 localhost:5903
+	LocalForward localhost:5904 localhost:5904
 	# Forward for the windows box
 	LocalForward localhost:3389 winxp:3389
 
@@ -125,16 +127,6 @@ Host gh
 	ControlPath none
 	ControlMaster no
 
-# Other Hosts
-Host dev.slidelint.net
-	HostName dev.slidelint.net
-	User slidelint_site
-
-Host prod.slidelint.net
-	HostName prod.slidelint.net
-	User tim
-	Port 2222
-
 # IP addresses that change often, hence don't do checking.
 Host 192.168.1.1
 	StrictHostKeyChecking no
@@ -151,6 +143,9 @@ Host 172.16.1.1
 	ControlMaster no
 
 # TimVideos.us sites
+Host *.timvideos.us
+	User ubuntu
+	IdentityFile ~/.ssh/keys/new_misc_key
 
 Host edid.tv
 	HostName 209.141.34.62
@@ -162,4 +157,12 @@ Host *.slidelint.net
 	User slidelint_site
 	IdentityFile ~/.ssh/keys/new_misc_key
 
+Host dev.slidelint.net
+	HostName dev.slidelint.net
+	User slidelint_site
+
+Host prod.slidelint.net
+	HostName prod.slidelint.net
+	User tim
+	Port 2222
 
