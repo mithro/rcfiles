@@ -1,4 +1,6 @@
 # Where go code is downloaded too
-declare -x GOPATH="~/gocode"
+declare -x GOPATH="$HOME/gocode"
 # The go runtime to use
-declare -x GOROOT="~/go"
+declare -x GOROOT="$HOME/go"
+
+PATH=$GOPATH/bin:$GOROOT/bin:$PATH
