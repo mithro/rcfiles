@@ -25,5 +25,5 @@ set modeline
 set undodir=~/.vim/undodir
 
 " Default formatting style and overrides for given types.
-set et ts=4 sw=4 sts=4
+au BufNewFile,BufRead *.py setlocal et ts=4 sw=4 sts=4
 au BufNewFile,BufRead *.go setlocal noet ts=4 sw=4 sts=4
