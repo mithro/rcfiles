@@ -35,6 +35,7 @@ execute pathogen#infect('~/rcfiles/vim/bundle/{}')
 " Extra plugin configuration
 source ~/rcfiles/vim/gotags.vim
 source ~/rcfiles/vim/syntastic.vim
+source ~/rcfiles/vim/statusline.vim
 
 " Turn on plugins
 filetype plugin indent on
