@@ -1,3 +1,7 @@
+" Don't run in vim mode
+set nocompatible
+
+" Default options
 colorscheme darkblue
 syntax on
 set spell
