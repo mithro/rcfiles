@@ -33,6 +33,7 @@ source ~/rcfiles/vim/bundle/vim-pathogen/autoload/pathogen.vim
 execute pathogen#infect('~/rcfiles/vim/bundle/{}')
 
 " Extra plugin configuration
+source ~/rcfiles/vim/go.vim
 source ~/rcfiles/vim/gotags.vim
 source ~/rcfiles/vim/syntastic.vim
 source ~/rcfiles/vim/statusline.vim
