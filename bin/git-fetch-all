@@ -2,7 +2,7 @@
 
 for i in $(git remote); do
 	echo "Fetching $i"
-	git fetch $i -p
+	git fetch $i -p -t
 done
 
 git submodule update --init --recursive
