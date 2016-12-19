@@ -9,33 +9,8 @@ Host *
 	TCPKeepAlive yes
 	ServerAliveInterval 30
 
-# AWS
-Host *.amazonaws.com
-	User ubuntu
-	IdentityFile ~/.ssh/keys/amazon_key
-
-# MITHIS Hosts
-Host lex.mithis.com
-	# Forward Munin
-	LocalForward localhost:1080 localhost:8080
-	LocalForward localhost:4200 localhost:4243
-	# Forward VNC for local VMs
-	LocalForward localhost:5900 localhost:5900
-	LocalForward localhost:5901 localhost:5901
-	LocalForward localhost:5902 localhost:5902
-	LocalForward localhost:5903 localhost:5903
-
-Host underwood.mithis.com
-	# Forward Munin
-	LocalForward localhost:1080 localhost:8080
-	LocalForward localhost:4200 localhost:4243
-	# Forward VNC for local VMs
-	LocalForward localhost:5900 localhost:5900
-	LocalForward localhost:5901 localhost:5901
-	LocalForward localhost:5902 localhost:5902
-	LocalForward localhost:5903 localhost:5903
-
 ## Tunnels
+# ------------------------------------------------------
 # Setup a Local SOCKS5 proxy, useful on dangerous networks.
 Host socks
 	HostName underwood.mithis.com
@@ -60,6 +35,77 @@ Host socks
 #	IdentityFile ~/.ssh/keys/new_misc_key
 #	ProxyCommand ~/.ssh/connect -H <username>@<proxy host>:<proxy port> %h %p
 
+# Local IP addresses that change often, hence don't do checking.
+# ------------------------------------------------------
+Host 192.168.1.1
+	StrictHostKeyChecking no
+	CheckHostIP no
+	UserKnownHostsFile /dev/null
+	ControlPath /dev/null
+	ControlMaster no
+
+Host 192.168.100.50
+	StrictHostKeyChecking no
+	CheckHostIP no
+	UserKnownHostsFile /dev/null
+	ControlPath /dev/null
+	ControlMaster no
+
+Host 172.16.1.1
+	StrictHostKeyChecking no
+	CheckHostIP no
+	UserKnownHostsFile /dev/null
+	ControlPath /dev/null
+	ControlMaster no
+
+Host 10.1.1.1
+	StrictHostKeyChecking no
+	CheckHostIP no
+	UserKnownHostsFile /dev/null
+	ControlPath /dev/null
+	ControlMaster no
+
+# ======================================================
+# Real hosts
+# ======================================================
+
+# AWS
+# ------------------------------------------------------
+Host *.amazonaws.com
+	User ubuntu
+	IdentityFile ~/.ssh/keys/amazon_key
+
+# MITHIS Hosts
+# ------------------------------------------------------
+Host *.mithis.com
+	User tim
+	IdentityFile ~/.ssh/keys/new_misc_key
+
+Host lex.mithis.com
+	# Forward Munin
+	LocalForward localhost:1080 localhost:8080
+	LocalForward localhost:4200 localhost:4243
+	# Forward VNC for local VMs
+	LocalForward localhost:5900 localhost:5900
+	LocalForward localhost:5901 localhost:5901
+	LocalForward localhost:5902 localhost:5902
+	LocalForward localhost:5903 localhost:5903
+
+Host underwood.mithis.com
+	# Forward Munin
+	LocalForward localhost:1080 localhost:8080
+	LocalForward localhost:4200 localhost:4243
+	# Forward VNC for local VMs
+	LocalForward localhost:5900 localhost:5900
+	LocalForward localhost:5901 localhost:5901
+	LocalForward localhost:5902 localhost:5902
+	LocalForward localhost:5903 localhost:5903
+
+Host qnap.mithis.com
+	LocalForward localhost:4200 localhost:4243
+
+# storage server
+# ------------------------------------------------------
 # Storage accessed without the .mithis.com
 Host storage
 	User tim
@@ -100,19 +146,14 @@ Host storage.mithis.com
 	# Forward for the windows box
 	LocalForward localhost:3389 winxp:3389
 
-Host qnap.mithis.com
-	LocalForward localhost:4200 localhost:4243
-
-Host *.mithis.com
-	User tim
-	IdentityFile ~/.ssh/keys/new_misc_key
-
 # Thousand Parsec hosts
+# ------------------------------------------------------
 Host *.thousandparsec.net
 	User tim
 	IdentityFile ~/.ssh/keys/new_misc_key
 
 # github
+# ------------------------------------------------------
 Host github.com
 	HostName github.com
 	User git
@@ -127,32 +168,36 @@ Host gh
 	ControlPath none
 	ControlMaster no
 
-# IP addresses that change often, hence don't do checking.
-Host 192.168.1.1
-	StrictHostKeyChecking no
-	CheckHostIP no
-	UserKnownHostsFile /dev/null
-	ControlPath /dev/null
-	ControlMaster no
-
-Host 172.16.1.1
-	StrictHostKeyChecking no
-	CheckHostIP no
-	UserKnownHostsFile /dev/null
-	ControlPath /dev/null
-	ControlMaster no
-
 # TimVideos.us sites
+# ------------------------------------------------------
 Host *.timvideos.us
-	User ubuntu
 	IdentityFile ~/.ssh/keys/new_misc_key
 
+# timvideos.us / www.timvideos.us
+Host timvideos.us
+	Hostname ssh.timvideos.us
+
+Host www.timvideos.us
+	Hostname ssh.timvideos.us
+
+Host ssh.timvideos.us
+	User tim
+
+# logs.timvideos.us
+Host logs.timvideos.us
+	Hostname ssh.logs.timvideos.us
+
+Host ssh.logs.timvideos.us
+	User tim
+
+# edid.tv
 Host edid.tv
 	HostName 209.141.34.62
 	Port 30
 	User mithro
 	IdentityFile ~/.ssh/keys/new_misc_key
 
+# slidelint
 Host *.slidelint.net
 	User slidelint_site
 	IdentityFile ~/.ssh/keys/new_misc_key
@@ -165,4 +210,3 @@ Host prod.slidelint.net
 	HostName prod.slidelint.net
 	User tim
 	Port 2222
-
