@@ -8,6 +8,9 @@ set spell
 set number
 set hlsearch
 
+" Disable toolbar in the gui
+set guioptions-=T
+
 " Highlight in red extra whitespace
 " http://vim.wikia.com/wiki/Highlight_unwanted_spaces
 highlight ExtraWhitespace ctermbg=red guibg=red
