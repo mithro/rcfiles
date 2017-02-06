@@ -147,42 +147,12 @@ function pkgs {
 		htop \
 		ipython \
 		tmux \
-		vim \
 		zsh
 
 	if [ $SERVER -ne 1 ]; then
 		sudo apt-get install \
-			gitk \
-			vim-gnome
+			gitk
 	fi
-}
-
-function vimpkgs {
-	# Vim itself
-	sudo apt-get install \
-		vim
-
-	if [ $SERVER -ne 1 ]; then
-		sudo apt-get install \
-			vim-gnome
-	fi
-
-	sudo apt-get install ctags
-
-	# YouCompleteMe
-	# ---------------------------------
-	# Packages needed for YouCompleteMe
-	sudo apt-get install \
-		libclang-dev \
-		libclang-3.8-dev \
-		ninja \
-		python-dev \
-
-	# Compile YouCompleteMe
-	(
-		cd vim/bundle/YouCompleteMe/
-		./install.py
-	)
 }
 
 function crontab {
