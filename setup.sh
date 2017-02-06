@@ -87,10 +87,8 @@ function ssh {
 				# Clear out any old keys
 				if [ ! -d ssh/keys/.git ]; then
 					rm -rf ssh/keys
-					git submodule init ssh/keys
+					git clone git+ssh://github.com/mithro/rcfiles-sshkeys.git ssh/keys
 				fi
-				# Update the keys if needed
-				git submodule update ssh/keys
 			)
 			break;;
 		[Nn]* )
