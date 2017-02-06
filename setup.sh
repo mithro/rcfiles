@@ -3,7 +3,6 @@
 # vim: set ts=4 sw=4 noet sts=4 ai:
 
 set -e
-set -x
 
 # Setup git submodules.
 git submodule sync --recursive
