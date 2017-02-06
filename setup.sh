@@ -5,8 +5,13 @@
 set -e
 set -x
 
-# Set Up my RC files.
+# Setup git submodules.
+git submodule sync --recursive
+git submodule update --recursive --init
+git submodule foreach \
+	git submodule update --recursive --init
 
+# Set Up my RC files.
 SERVER=$(dpkg -l ubuntu-desktop > /dev/null 2>&1; echo $?)
 
 RCFILES=~/rcfiles
