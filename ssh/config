@@ -190,6 +190,12 @@ Host logs.timvideos.us
 Host ssh.logs.timvideos.us
 	User tim
 
+Host build.hdmi2usb.tv
+	User tim
+	Hostname 5.9.78.17
+	Port 2222
+	LocalForward localhost:5901 localhost:5901
+
 # edid.tv
 Host edid.tv
 	HostName 209.141.34.62
