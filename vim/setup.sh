@@ -16,6 +16,10 @@ fi
 
 sudo apt-get install ctags
 
+mkdir -p ~/.vim
+mkdir -p ~/.vim/undodir
+ln -sf $PWD/vimrc ~/.vimrc
+
 # YouCompleteMe
 # ---------------------------------
 # Packages needed for YouCompleteMe
