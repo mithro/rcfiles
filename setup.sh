@@ -2,8 +2,15 @@
 # -*- coding: utf-8 -*-
 # vim: set ts=4 sw=4 noet sts=4 ai:
 
-# Set Up my RC files.
+set -e
 
+# Setup git submodules.
+git submodule sync --recursive
+git submodule update --recursive --init
+git submodule foreach \
+	git submodule update --recursive --init
+
+# Set Up my RC files.
 SERVER=$(dpkg -l ubuntu-desktop > /dev/null 2>&1; echo $?)
 
 RCFILES=~/rcfiles
@@ -80,10 +87,8 @@ function ssh {
 				# Clear out any old keys
 				if [ ! -d ssh/keys/.git ]; then
 					rm -rf ssh/keys
-					git submodule init ssh/keys
+					git clone git+ssh://github.com/mithro/rcfiles-sshkeys.git ssh/keys
 				fi
-				# Update the keys if needed
-				git submodule update ssh/keys
 			)
 			break;;
 		[Nn]* )
@@ -146,42 +151,12 @@ function pkgs {
 		iprint \
 		ipython \
 		tmux \
-		vim \
 		zsh
 
 	if [ $SERVER -ne 1 ]; then
 		sudo apt-get install \
-			gitk \
-			vim-gnome
+			gitk
 	fi
-}
-
-function vimpkgs {
-	# Vim itself
-	sudo apt-get install \
-		vim
-
-	if [ $SERVER -ne 1 ]; then
-		sudo apt-get install \
-			vim-gnome
-	fi
-
-	sudo apt-get install ctags
-
-	# YouCompleteMe
-	# ---------------------------------
-	# Packages needed for YouCompleteMe
-	sudo apt-get install \
-		libclang-dev \
-		libclang-3.8-dev \
-		ninja \
-		python-dev \
-
-	# Compile YouCompleteMe
-	(
-		cd vim/bundle/YouCompleteMe/
-		./install.py
-	)
 }
 
 function crontab {
