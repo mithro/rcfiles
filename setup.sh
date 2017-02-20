@@ -138,10 +138,12 @@ EOF
 
 function pkgs {
 	sudo apt-get install \
+		ascii \
 		bpython \
 		curl \
 		git \
 		htop \
+		iprint \
 		ipython \
 		tmux \
 		vim \
