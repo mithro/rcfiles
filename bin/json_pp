@@ -1,0 +1,12 @@
+#!/usr/bin/env python
+import json
+import sys
+data = open(sys.argv[1], 'rb').read()
+start = data.find('{')
+end = data.rfind('}')+1
+assert start >= 0
+assert end > 0
+
+print data[:start].strip()
+print json.dumps(json.loads(data[start:end]), indent=2, sort_keys=True)
+print data[end:].strip()
