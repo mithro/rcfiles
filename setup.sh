@@ -35,7 +35,7 @@ function linkit {
 		F=`basename $FP`
 
 		# Remove the old file
-		rm ~/.$F 2> /dev/null
+		rm ~/.$F 2> /dev/null || true
 
 		# Generate a new file
 		# FIXME: Check we are not overriding any local changes!
@@ -50,7 +50,7 @@ function linkit {
 		if [ -f $TMP ]; then
 			echo " (generated)"
 			cat $FP $TMP > ~/.$F
-			rm $TMP
+			rm $TMP || true
 		else
 			echo " (linked)"
 			ln -s $FP ~/.$F
@@ -86,7 +86,7 @@ function ssh {
 				cd $RCFILES
 				# Clear out any old keys
 				if [ ! -d ssh/keys/.git ]; then
-					rm -rf ssh/keys
+					rm -rf ssh/keys || true
 					git clone git+ssh://github.com/mithro/rcfiles-sshkeys.git ssh/keys
 				fi
 			)
@@ -97,6 +97,7 @@ function ssh {
 				ssh-keygen -t rsa -f ~/.ssh/id_rsa
 			fi
 			# Link up the misc_key
+			mkdir -p $RCFILES/ssh/keys
 			ln -sf ~/.ssh/id_rsa $RCFILES/ssh/keys/misc_key
 			break;;
 		* ) echo "Please answer yes or no.";;
