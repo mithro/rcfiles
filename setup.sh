@@ -3,6 +3,7 @@
 # vim: set ts=4 sw=4 noet sts=4 ai:
 
 set -e
+set -x
 
 # Setup git submodules.
 git submodule sync --recursive
@@ -165,7 +166,7 @@ function crontab {
 }
 
 function ack {
-    curl http://beyondgrep.com/ack-2.12-single-file > ~/bin/ack && chmod 0755 ~/bin/ack
+	curl https://beyondgrep.com/ack-2.18-single-file > ~/bin/ack && chmod 0755 ~/bin/ack
 }
 
 # Fix permissions
