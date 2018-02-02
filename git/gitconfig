@@ -1,6 +1,6 @@
 [user]
 	name = Tim 'mithro' Ansell
-	email = mithro@mithis.com
+	email = me@mith.ro
 [core]
 	excludesfile = ~/.gitignore
 [color]
