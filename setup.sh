@@ -36,7 +36,7 @@ function linkit {
 		F=`basename $FP`
 
 		# Remove the old file
-		rm ~/.$F 2> /dev/null || true
+		rm -f ~/.$F 2> /dev/null
 
 		# Generate a new file
 		# FIXME: Check we are not overriding any local changes!
@@ -123,7 +123,7 @@ function ppa {
 			[Yy]* )
 				(
 					# Needed for add-apt-repository
-					sudo apt-get install python-software-properties
+					sudo apt-get -y install python-software-properties
 					sudo add-apt-repository ppa:mithro/personal
 					sudo bash -c "cat >> /etc/apt/preferences" <<EOF
 Explanation: Give the my personal PPA a higher priority than anything else
@@ -144,7 +144,7 @@ EOF
 }
 
 function pkgs {
-	sudo apt-get install \
+	sudo apt-get -y install \
 		ascii \
 		bpython \
 		curl \
@@ -156,7 +156,7 @@ function pkgs {
 		zsh
 
 	if [ $SERVER -ne 1 ]; then
-		sudo apt-get install \
+		sudo apt-get -y install \
 			gitk
 	fi
 }
@@ -166,7 +166,7 @@ function crontab {
 }
 
 function ack {
-	curl https://beyondgrep.com/ack-2.18-single-file > ~/bin/ack && chmod 0755 ~/bin/ack
+    curl https://beyondgrep.com/ack-2.22-single-file > ~/bin/ack && chmod 0755 ~/bin/ack
 }
 
 # Fix permissions

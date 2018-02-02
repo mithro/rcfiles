@@ -3,5 +3,5 @@
 tmux rename-window jjj
 
 while true; do 
-  mplayer http://www.abc.net.au/res/streaming/audio/aac/triplej.pls
+  mplayer -playlist http://www.abc.net.au/res/streaming/audio/aac/triplej.pls
 done
