@@ -3,6 +3,8 @@
 	email = mithro@mithis.com
 [core]
 	excludesfile = ~/.gitignore
+	askpass = 
+	helper = 
 [color]
 	ui = auto
 [gc]
@@ -18,3 +20,5 @@
 	server = codereview.chromium.org
 [http]
 	cookiefile = ~/.gitcookies
+[credential]
+	helper = ~/bin/helper-stop
