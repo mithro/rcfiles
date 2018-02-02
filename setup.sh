@@ -35,7 +35,7 @@ function linkit {
 		F=`basename $FP`
 
 		# Remove the old file
-		rm ~/.$F 2> /dev/null
+		rm -f ~/.$F 2> /dev/null
 
 		# Generate a new file
 		# FIXME: Check we are not overriding any local changes!
