@@ -6,15 +6,15 @@ set -e
 set -x
 
 # Vim itself
-sudo apt-get install \
+sudo apt-get -y install \
 	vim
 
-if [ '$SERVER' -ne 1 ]; then
-	sudo apt-get install \
+if [ "$SERVER" -ne 1 ]; then
+	sudo apt-get -y install \
 		vim-gnome
 fi
 
-sudo apt-get install ctags
+sudo apt-get -y install ctags
 
 mkdir -p ~/.vim
 mkdir -p ~/.vim/undodir
@@ -23,7 +23,7 @@ ln -sf $PWD/vimrc ~/.vimrc
 # YouCompleteMe
 # ---------------------------------
 # Packages needed for YouCompleteMe
-sudo apt-get install \
+sudo apt-get -y install \
 	cmake \
 	libclang-dev \
 	libclang-3.8-dev \
