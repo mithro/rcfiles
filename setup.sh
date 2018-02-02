@@ -121,7 +121,7 @@ function ppa {
 			[Yy]* )
 				(
 					# Needed for add-apt-repository
-					sudo apt-get install python-software-properties
+					sudo apt-get -y install python-software-properties
 					sudo add-apt-repository ppa:mithro/personal
 					sudo bash -c "cat >> /etc/apt/preferences" <<EOF
 Explanation: Give the my personal PPA a higher priority than anything else
@@ -142,7 +142,7 @@ EOF
 }
 
 function pkgs {
-	sudo apt-get install \
+	sudo apt-get -y install \
 		ascii \
 		bpython \
 		curl \
@@ -154,7 +154,7 @@ function pkgs {
 		zsh
 
 	if [ $SERVER -ne 1 ]; then
-		sudo apt-get install \
+		sudo apt-get -y install \
 			gitk
 	fi
 }
