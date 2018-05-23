@@ -22,3 +22,5 @@
 	cookiefile = ~/.gitcookies
 [credential]
 	helper = stop
+[status]
+        submodulesummary = 1
