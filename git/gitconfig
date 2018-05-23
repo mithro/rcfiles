@@ -21,4 +21,4 @@
 [http]
 	cookiefile = ~/.gitcookies
 [credential]
-	helper = ~/bin/helper-stop
+	helper = stop
