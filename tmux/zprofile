@@ -1,5 +1,8 @@
 #!/bin/zsh
 
+# We store the ssh connection multiplexer sockets in this directory.
+mkdir /tmp/ssh
+
 # This setup is designed so that you can "use tmux as your shell" but still
 # preserve support for rsync and scp. Instead we set zsh as our shell and have
 # the following .zprofile file which starts tmux if it's an interactive session.
@@ -40,8 +43,8 @@ for env in `echo $UPDATE_ENV`; do
 	fi
 done
 
-if [[ ( -z "$STY" ) && ( ! -z "$SSH_CONNECTION" ) || ( x"$TERM" -eq xxterm ) ]]; then
-        if tmux has-session -t default; then
+if [[ ( -z "$STY" ) && (( ! -z "$SSH_CONNECTION" ) || ( x"$TERM" == x"xterm-256color" ) || ( x"$TERM" == x"xterm" ) || ( x"$TERM" == x"linux" )) ]]; then
+        if ! tmux has-session -t default; then
 	else
 		# Create the default session that all our windows will be in...
 		tmux new-session -d -s default -n h "tail -f ~/.tmux-help" \; setw remain-on-exit\; send-keys C-c
@@ -54,4 +57,5 @@ if [[ ( -z "$STY" ) && ( ! -z "$SSH_CONNECTION" ) || ( x"$TERM" -eq xxterm ) ]];
 	exec tmux new-session -t default\; new-window
 else
         echo "Not starting tmux!"
+	echo "STY='$STY' SSH_CONNECTION='$SSH_CONNECTION' TERM='$TERM'"
 fi
