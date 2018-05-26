@@ -34,6 +34,10 @@ esac
 
 alias emacs=vi	# Confuse other people using my system
 
+# Colorize ip
+alias ip='ip --color'
+alias ipb='ip --color --brief'
+
 # Getting around faster
 alias ..='cd ..'
 alias ~='cd ~'
