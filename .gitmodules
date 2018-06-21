@@ -28,3 +28,6 @@
 [submodule "gdb/gdb-dashboard"]
 	path = gdb/gdb-dashboard
 	url = https://github.com/cyrus-and/gdb-dashboard
+[submodule "vim/bundle/vim-flatbuffers"]
+	path = vim/bundle/vim-flatbuffers
+	url = https://github.com/dcharbon/vim-flatbuffers

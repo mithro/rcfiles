@@ -1,5 +1,7 @@
 #! /bin/sh
 
+alias more=less
+
 # Make rm a little safer
 alias rm="rm -i"
 
