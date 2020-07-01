@@ -5,6 +5,7 @@
 	excludesfile = ~/.gitignore
 	askpass = 
 	helper = 
+	attributesfile = ~/.gitattributes
 [color]
 	ui = auto
 [gc]
@@ -24,3 +25,13 @@
 	helper = stop
 [status]
         submodulesummary = 1
+[alias]
+	c = commit -s
+	diff-image = "!f() { cd -- \"${GIT_PREFIX:-.}\"; GIT_DIFF_IMAGE_ENABLED=1 git diff \"$@\"; }; f"
+[diff "image"]
+	command = ~/github/ewanmellor/git-diff-image/git_diff_image
+[diff "gds"]
+	textconv = hexdump -v -C
+[diff]
+	renameLimit = 100000
+	renames = copy
