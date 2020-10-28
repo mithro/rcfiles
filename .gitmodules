@@ -31,3 +31,6 @@
 [submodule "vim/bundle/vim-flatbuffers"]
 	path = vim/bundle/vim-flatbuffers
 	url = https://github.com/dcharbon/vim-flatbuffers
+[submodule "vim/bundle/riv.vim"]
+	path = vim/bundle-disable/riv.vim
+	url = https://github.com/gu-fan/riv.vim.git
