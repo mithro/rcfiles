@@ -33,6 +33,7 @@ au BufNewFile,BufRead *.go setlocal noet ts=4 sw=4 sts=4
 au BufNewFile,BufRead *.h setlocal et ts=4 sw=4 sts=4
 au BufNewFile,BufRead *.cc setlocal et ts=4 sw=4 sts=4
 au BufNewFile,BufRead *.cpp setlocal et ts=4 sw=4 sts=4
+au BufNewFile,BufRead *.rst setlocal et ts=4 sw=4 sts=4
 
 " Setup pathogen
 source ~/rcfiles/vim/bundle/vim-pathogen/autoload/pathogen.vim

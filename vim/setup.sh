@@ -9,7 +9,7 @@ set -x
 sudo apt-get -y install \
 	vim
 
-if [ "$SERVER" -ne 1 ]; then
+if [ z"$SERVER" != z1 ]; then
 	sudo apt-get -y install \
 		vim-gnome
 fi
@@ -24,14 +24,19 @@ ln -sf $PWD/vimrc ~/.vimrc
 # ---------------------------------
 # Packages needed for YouCompleteMe
 sudo apt-get -y install \
+	cargo \
 	cmake \
-	libclang-dev \
-	libclang-3.8-dev \
+	libclang-*-dev \
 	ninja-build \
 	python-dev \
+	python3-dev \
 
 # Compile YouCompleteMe
 (
 	cd bundle/YouCompleteMe/
-	./install.py
+	python3 ./install.py \
+		--clang-completer \
+		--gocode-completer \
+
+#		--racer-completer \
 )

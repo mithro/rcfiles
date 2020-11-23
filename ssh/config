@@ -1,5 +1,6 @@
 # Default Options
 Host *
+	CanonicalizeHostname no
 	# Check for sshfp keys in DNS
 	VerifyHostKeyDNS yes
 	# Use a control channel, use -S none to disable.
@@ -8,6 +9,8 @@ Host *
 	# Keep those connections alive!
 	TCPKeepAlive yes
 	ServerAliveInterval 30
+
+Include ~/.ssh/config_extra
 
 ## Tunnels
 # ------------------------------------------------------
@@ -100,6 +103,7 @@ Host underwood.mithis.com
 	LocalForward localhost:5901 localhost:5901
 	LocalForward localhost:5902 localhost:5902
 	LocalForward localhost:5903 localhost:5903
+	LocalForward localhost:5904 localhost:5904
 
 Host qnap.mithis.com
 	LocalForward localhost:4200 localhost:4243
@@ -109,6 +113,8 @@ Host qnap.mithis.com
 # Storage accessed without the .mithis.com
 Host storage
 	User tim
+	HostName 10.1.10.100
+	IdentityFile ~/.ssh/keys/new_misc_key
 	# Foward transmission bittorrent client
 	LocalForward localhost:4000 localhost:4000
 	LocalForward localhost:8989 localhost:8989
@@ -146,6 +152,12 @@ Host storage.mithis.com
 	# Forward for the windows box
 	LocalForward localhost:3389 winxp:3389
 
+Host desktop
+	User tim
+	HostName 10.1.10.101
+	#HostName 10.1.10.120
+	IdentityFile ~/.ssh/keys/new_misc_key
+
 # Thousand Parsec hosts
 # ------------------------------------------------------
 Host *.thousandparsec.net
@@ -168,6 +180,22 @@ Host gh
 	ControlPath none
 	ControlMaster no
 
+# gitlab
+# ------------------------------------------------------
+Host gitlab.com
+	HostName gitlab.com
+	User git
+	IdentityFile ~/.ssh/keys/new_misc_key
+	ControlPath none
+	ControlMaster no
+
+Host gl
+	HostName gitlab.com
+	User git
+	IdentityFile ~/.ssh/keys/new_misc_key
+	ControlPath none
+	ControlMaster no
+
 # TimVideos.us sites
 # ------------------------------------------------------
 Host *.timvideos.us
@@ -185,22 +213,25 @@ Host ssh.timvideos.us
 
 # logs.timvideos.us
 Host logs.timvideos.us
-	Hostname ssh.logs.timvideos.us
-
-Host ssh.logs.timvideos.us
+	ProxyJump tim@underwood.mithis.com
+	Hostname 192.168.1.10
 	User tim
 
+#Host build.hdmi2usb.tv
+#	User tim
+#	Hostname 5.9.78.17
+#	Port 2222
 Host build.hdmi2usb.tv
+	ProxyJump tim@underwood.mithis.com
+	Hostname 192.168.1.7
 	User tim
-	Hostname 5.9.78.17
-	Port 2222
 	LocalForward localhost:5901 localhost:5901
 
 # edid.tv
 Host edid.tv
-	HostName 209.141.34.62
-	Port 30
-	User mithro
+	ProxyJump tim@underwood.mithis.com
+	Hostname 192.168.1.9
+	User tim
 	IdentityFile ~/.ssh/keys/new_misc_key
 
 # slidelint
