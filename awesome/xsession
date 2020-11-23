@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# Disable screensaver as nvidia has a fit if my displays goes to sleep.
+# Remove once using open source driver.
+xset dpms 0 0 0
+xset -dpms
+xset s 0 0
+xset s off
+
+# Force the DPI to be 96
+xrandr --dpi 96
+
+# Start awesome
+awesome
