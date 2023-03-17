@@ -35,3 +35,7 @@
 [diff]
 	renameLimit = 100000
 	renames = copy
+
+# GitHub doesn't support git:// protocol anymore.
+[url "https://github"]
+	insteadOf = git://github
