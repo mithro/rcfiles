@@ -9,6 +9,9 @@ Host *
 	# Keep those connections alive!
 	TCPKeepAlive yes
 	ServerAliveInterval 30
+	# Enable older ssh-rsa keys
+	PubkeyAcceptedAlgorithms +ssh-rsa
+	HostkeyAlgorithms +ssh-rsa
 
 Include ~/.ssh/config_extra
 
