@@ -150,8 +150,7 @@ function pkgs {
 		curl \
 		git \
 		htop \
-		iprint \
-		ipython \
+		ipython3 \
 		tmux \
 		zsh
 
