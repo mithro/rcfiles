@@ -127,9 +127,10 @@ function ssh {
 			if [ ! -f ~/.ssh/id_rsa ]; then
 				ssh-keygen -t rsa -f ~/.ssh/id_rsa
 			fi
-			# Link up the misc_key
+			# Link up the misc_key and new_misc_key
 			mkdir -p $RCFILES/ssh/keys
 			ln -sf ~/.ssh/id_rsa $RCFILES/ssh/keys/misc_key
+			ln -sf ~/.ssh/id_rsa $RCFILES/ssh/keys/new_misc_key
 			break;;
 		* ) echo "Please answer yes or no.";;
 		esac
