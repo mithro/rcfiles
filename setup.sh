@@ -11,6 +11,14 @@ git submodule update --recursive --init
 git submodule foreach \
 	git submodule update --recursive --init
 
+# Convert git remote origin to SSH if it's using HTTPS
+CURRENT_ORIGIN=$(git remote get-url origin)
+if [[ "$CURRENT_ORIGIN" =~ ^https://github.com/(.*)$ ]]; then
+	NEW_ORIGIN="git@github.com:${BASH_REMATCH[1]}"
+	echo "Converting remote origin from HTTPS to SSH: $NEW_ORIGIN"
+	git remote set-url origin "$NEW_ORIGIN"
+fi
+
 # Set Up my RC files.
 SERVER=$(dpkg -l ubuntu-desktop > /dev/null 2>&1; echo $?)
 
