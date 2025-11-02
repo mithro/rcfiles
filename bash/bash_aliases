@@ -98,5 +98,7 @@ alias less="less -R"
 
 # Bigger command aliases / functions
 for include in ~/rcfiles/bash/include/*; do
+  # Skip documentation files
+  [[ "$include" == *.md ]] && continue
   source $include
 done
