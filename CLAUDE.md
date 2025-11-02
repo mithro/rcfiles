@@ -31,12 +31,14 @@ cd ~/github/mithro/rcfiles
 
 This script:
 1. Detects the repository location and creates `~/rcfiles` symlink if needed
-2. Initializes all git submodules recursively
-3. Creates symlinks for configuration files from various directories (bash, git, vim, tmux, ssh, etc.) to `~/.{filename}`
-4. Supports hostname-specific configuration overrides using suffixes like `-$HOSTNAME`, `-$DOMAIN`, or `-$BASE_DOMAIN`
-5. Installs required packages (ascii, bpython, curl, git, htop, ipython3, tmux, zsh, and gitk for desktop systems)
-6. Sets up SSH keys (either from a private git repository or generates local keys)
-7. Links utilities from `bin/` to `~/bin/`
+2. Converts git remote origin from HTTPS to SSH format (github.com)
+3. Initializes all git submodules recursively
+4. Creates symlinks for configuration files from various directories (bash, git, vim, tmux, ssh, etc.) to `~/.{filename}`
+5. Supports hostname-specific configuration overrides using suffixes like `-$HOSTNAME`, `-$DOMAIN`, or `-$BASE_DOMAIN`
+6. Installs required packages (ascii, bpython, curl, git, htop, ipython3, mosh, tmux, zsh, and gitk for desktop systems)
+7. Sets up SSH keys (either from a private git repository or generates local keys)
+8. Clones and links `~/.claude` to `~/github/mithro/dot-claude` repository
+9. Links utilities from `bin/` to `~/bin/`
 
 ## Architecture
 
@@ -81,6 +83,11 @@ The `linkit()` function in `setup.sh:24-60` implements a hostname-aware configur
 - Language-specific settings for Python, Go, C/C++, and RST
 - Persistent undo in `~/.vim/undodir`
 - Custom statusline, go configuration, and syntastic settings
+
+**Claude Code Configuration:**
+- `~/.claude` is symlinked to `~/github/mithro/dot-claude` repository
+- Contains Claude Code settings, hooks, and custom configurations
+- Automatically cloned and symlinked during setup
 
 ## Git Submodules
 

@@ -225,6 +225,26 @@ function ack {
     curl https://beyondgrep.com/ack-2.22-single-file > ~/bin/ack && chmod 0755 ~/bin/ack
 }
 
+function claude {
+	DOT_CLAUDE_DIR=~/github/mithro/dot-claude
+
+	# Clone dot-claude repository if it doesn't exist
+	if [ ! -d "$DOT_CLAUDE_DIR" ]; then
+		echo "Cloning dot-claude repository..."
+		mkdir -p ~/github/mithro
+		git clone git@github.com:mithro/dot-claude.git "$DOT_CLAUDE_DIR"
+	fi
+
+	# Create ~/.claude symlink if it doesn't exist
+	if [ ! -e ~/.claude ]; then
+		echo "Creating ~/.claude symlink to $DOT_CLAUDE_DIR"
+		ln -s "$DOT_CLAUDE_DIR" ~/.claude
+	elif [ ! -L ~/.claude ]; then
+		echo "Warning: ~/.claude exists but is not a symlink"
+		echo "Please manually fix this before continuing."
+	fi
+}
+
 # Fix permissions
 umask 022
 
@@ -246,6 +266,7 @@ pkgs
 
 ack
 ssh
+claude
 
 if [ $SERVER -ne 1 ]; then
 	(
