@@ -73,6 +73,7 @@ The `linkit()` function in `setup.sh:24-60` implements a hostname-aware configur
 - Enables older ssh-rsa algorithms for compatibility
 - Defines many host-specific configurations for personal servers, GitHub, GitLab, AWS, and TimVideos infrastructure
 - SSH keys stored in `ssh/keys/` (not tracked in main repository)
+- On server installations, authorized_keys are downloaded from `github.com/mithro.keys` with local `ssh/authorized_keys` appended if present
 
 **Vim Configuration:**
 - Uses Pathogen for plugin management (`vim/bundle/vim-pathogen`)

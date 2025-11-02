@@ -128,12 +128,37 @@ function ssh {
 	done
 
 	# Fix key permissions
-	chmod 600 $RCFILES/ssh/keys/*
+	chmod 600 $RCFILES/ssh/keys/* 2>/dev/null || true
 
 	# Set up authorized keys if a server
 	if [ $SERVER -eq 1 ]; then
-		cat ssh/authorized_keys >> ~/.ssh/authorized_keys
-		chmod 600 ~/.ssh/authorized_keys
+		echo "Setting up authorized_keys for server..."
+
+		# Download authorized keys from GitHub
+		if curl -fsSL https://github.com/mithro.keys -o ~/.ssh/authorized_keys.tmp; then
+			echo "Downloaded authorized_keys from github.com/mithro.keys"
+
+			# Append local authorized_keys if it exists
+			if [ -f $RCFILES/ssh/authorized_keys ]; then
+				echo "Appending local authorized_keys"
+				cat $RCFILES/ssh/authorized_keys >> ~/.ssh/authorized_keys.tmp
+			fi
+
+			# Move to final location
+			mv ~/.ssh/authorized_keys.tmp ~/.ssh/authorized_keys
+			chmod 600 ~/.ssh/authorized_keys
+			echo "authorized_keys setup complete"
+		else
+			echo "Warning: Failed to download from github.com/mithro.keys"
+			# Fallback to local file if download fails
+			if [ -f $RCFILES/ssh/authorized_keys ]; then
+				echo "Using local authorized_keys as fallback"
+				cat $RCFILES/ssh/authorized_keys >> ~/.ssh/authorized_keys
+				chmod 600 ~/.ssh/authorized_keys
+			else
+				echo "Error: No authorized_keys available"
+			fi
+		fi
 	fi
 }
 
