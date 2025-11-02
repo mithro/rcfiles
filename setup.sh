@@ -14,7 +14,29 @@ git submodule foreach \
 # Set Up my RC files.
 SERVER=$(dpkg -l ubuntu-desktop > /dev/null 2>&1; echo $?)
 
+# Detect repository location and ensure ~/rcfiles symlink exists
+# The repository can be at ~/github/mithro/rcfiles with ~/rcfiles as a symlink
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RCFILES_TARGET=~/github/mithro/rcfiles
 RCFILES=~/rcfiles
+
+# If we're running from ~/github/mithro/rcfiles and ~/rcfiles doesn't exist or isn't a symlink to the right place
+if [ "$SCRIPT_DIR" = "$HOME/github/mithro/rcfiles" ]; then
+	if [ ! -e "$RCFILES" ]; then
+		echo "Creating symlink: $RCFILES -> $RCFILES_TARGET"
+		ln -s "$RCFILES_TARGET" "$RCFILES"
+	elif [ ! -L "$RCFILES" ] || [ "$(readlink -f "$RCFILES")" != "$RCFILES_TARGET" ]; then
+		echo "Warning: $RCFILES exists but is not a symlink to $RCFILES_TARGET"
+		echo "Please manually fix this before continuing."
+		exit 1
+	fi
+fi
+
+# Verify RCFILES directory exists and is accessible
+if [ ! -d "$RCFILES" ]; then
+	echo "Error: $RCFILES directory not found!"
+	exit 1
+fi
 
 HOSTNAME=$(hostname -f)
 DOMAIN=$(hostname -d)
