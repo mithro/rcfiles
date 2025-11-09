@@ -207,6 +207,7 @@ function pkgs {
 		git \
 		htop \
 		ipython3 \
+		jq \
 		mosh \
 		tmux \
 		zsh
