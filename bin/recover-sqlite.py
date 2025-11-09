@@ -1,7 +1,7 @@
 
 import os
 import sys
-from progressbar import *
+from progressbar import Percentage, Bar, RotatingMarker, ETA, FileTransferSpeed, ProgressBar
 
 f = open('/dev/mapper/sysvg-root', 'rb')
 f.seek(0, os.SEEK_END)
