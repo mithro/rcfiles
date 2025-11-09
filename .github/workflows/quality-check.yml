@@ -93,7 +93,6 @@ jobs:
             echo "Error: Trailing whitespace found"
             exit 1
           fi
-        continue-on-error: true
 
       - name: Check for tabs in Python files
         run: |
@@ -104,4 +103,3 @@ jobs:
             echo "Error: Tabs found in Python files (use spaces)"
             exit 1
           fi
-        continue-on-error: true
