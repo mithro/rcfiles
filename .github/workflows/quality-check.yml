@@ -25,7 +25,8 @@ jobs:
             vim/bundle
             vim/bundle-disable
             gdb/gdb-dashboard
-            tmux/zprofile
+          ignore_names: >-
+            zprofile
 
   python-quality:
     name: Python Quality
