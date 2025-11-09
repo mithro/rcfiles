@@ -15,8 +15,8 @@ sudo apt-get install \
 (
 	cp -rf config ~/.config/awesome
 	# Fix $HOME references
-	for FILE in $(find ~/.config/awesome -type f); do
-		sed -i -e "s^~/^$HOME/^g" $FILE
+	find ~/.config/awesome -type f -print0 | while IFS= read -r -d '' FILE; do
+		sed -i -e "s^~/^$HOME/^g" "$FILE"
 	done
 )
 
@@ -27,8 +27,8 @@ sudo apt-get install \
 	cp -Rv session/* $TEMPDIR
 
 	# Fix $HOME references
-	for FILE in $(find $TEMPDIR -type f); do
-		sed -i -e "s^~/^$HOME/^g" $FILE
+	find "$TEMPDIR" -type f -print0 | while IFS= read -r -d '' FILE; do
+		sed -i -e "s^~/^$HOME/^g" "$FILE"
 	done
 
 	# Fix all the permissions / ownership

@@ -27,4 +27,4 @@ cat > /tmp/xmlsort.xsl <<EOF
 
 </xsl:stylesheet>
 EOF
-xsltproc /tmp/xmlsort.xsl $@
+xsltproc /tmp/xmlsort.xsl "$@"

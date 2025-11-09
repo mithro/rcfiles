@@ -2,9 +2,9 @@
 #
 # This script checks that the rcfiles are all up to date. It's designed to be
 # run from cron.
-# 
+#
 
-cd ~/rcfiles
+cd ~/rcfiles || exit
 
 LINE="------------------------------------------------------------------------------"
 
@@ -59,7 +59,7 @@ if [ $GITPUSH -gt 0 ]; then
 fi
 
 # If the work directory is dirty or needs pushing, don't do anything more.
-if [ $GITDIRTY -eq 1 -a $GITPUSH -eq 0 ]; then
+if [ "$GITDIRTY" -eq 1 ] && [ "$GITPUSH" -eq 0 ]; then
 	##########################################################################
 	# Check if there is anything to fetch
 	echo >> $OUTPUTFILE
@@ -80,7 +80,7 @@ if [ $GITDIRTY -eq 1 -a $GITPUSH -eq 0 ]; then
 
 	##########################################################################
 	# Check if we can merge the upstream changes
-	GITMERGE=`git merge @{u} --ff-only 2>&1 | tee -a $OUTPUTFILE | wc -l`
+	GITMERGE=`git merge '@{u}' --ff-only 2>&1 | tee -a $OUTPUTFILE | wc -l`
 	GITMERGE_RETCODE=$?
 	if [ $GITMERGE -ne 1 ]; then
 		SENDEMAIL=1
@@ -99,7 +99,7 @@ if [ $SENDEMAIL -eq 0 ]; then
 	rm $OUTPUTDIR/*
 else
 # Check if we have already sent an email - indicated by file left in $OUTPUTDIR
-	if [ `ls $OUTPUTDIR | wc -l` -gt 1 ]; then
+	if [ "$(ls "$OUTPUTDIR" | wc -l)" -gt 1 ]; then
 		rm $OUTPUTFILE
 	else
 		# Send an email

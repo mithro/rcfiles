@@ -6,7 +6,7 @@ while true; do
 
 	# We cd each time around incase we are on an external HD and it has been
 	# remounted.
-	cd $1
+	cd "$1" || exit
 
 	# Make sure the backups directory exists, this to prevent us syncing to the
 	# local HD if the external HD goes away (such as power failure).

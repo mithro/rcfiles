@@ -12,12 +12,16 @@ if [ ! -f $1 ]; then
   exit
 fi
 
-export PACKAGE=`echo $1 | sed -e's/_.*//'`
-export VERSION=`echo $1 | sed -e's/.*_//' -e's/.dsc//'`
+export PACKAGE
+PACKAGE=$(echo "$1" | sed -e's/_.*//')
+export VERSION
+VERSION=$(echo "$1" | sed -e's/.*_//' -e's/.dsc//')
 export PPA_VERSION=$2
 export DISTRO=$3
-export UPSTREAM_VERSION=`echo $VERSION | sed -e's/-.*//'`
-export DEBIAN_VERSION=`echo $VERSION | sed -e's/.*-//'`
+export UPSTREAM_VERSION
+UPSTREAM_VERSION=$(echo "$VERSION" | sed -e's/-.*//')
+export DEBIAN_VERSION
+DEBIAN_VERSION=$(echo "$VERSION" | sed -e's/.*-//')
 export OUR_VERSION="$VERSION~$DISTRO$PPA_VERSION"
 export SOURCE_DIR="$PACKAGE-$UPSTREAM_VERSION"
 
@@ -28,15 +32,15 @@ echo "Upstream Version: $UPSTREAM_VERSION"
 echo "Debian Verison: $DEBIAN_VERSION"
 echo "Source Dir: $SOURCE_DIR"
 
-rm -rf $DISTRO
+rm -rf "$DISTRO"
 
-mkdir $DISTRO
-cd $DISTRO
+mkdir "$DISTRO"
+cd "$DISTRO" || exit
 
 # Extract the "general package"
 dpkg-source -x ../${PACKAGE}_${VERSION}.dsc
 
-cd $SOURCE_DIR
+cd "$SOURCE_DIR" || exit
 
 # Add our custom changelog.
 cat > ./debian/changelog <<EOF
