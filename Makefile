@@ -51,7 +51,7 @@ python-fix:
 # YAML linting with yamllint
 yaml-lint:
 	@echo "Running yamllint..."
-	@yamllint -d "{extends: default, rules: {line-length: {max: 120}, truthy: {check-keys: false}}}" .github/
+	@yamllint -d "{extends: default, rules: {line-length: {max: 120}, truthy: {check-keys: false}, comments: {require-starting-space: true, min-spaces-from-content: 1}}}" .github/
 	@echo "✓ YAML linting passed"
 
 # File quality checks
