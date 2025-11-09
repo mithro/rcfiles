@@ -45,12 +45,12 @@ jobs:
       - name: Run ruff linter
         run: |
           # Lint Python files, excluding submodules
-          ruff check python/ bin/*.py backup/*.py --exclude vim/ --exclude gdb/ || true
+          ruff check python/ bin/*.py backup/*.py --exclude vim/ --exclude gdb/
 
       - name: Run ruff formatter check
         run: |
           # Check formatting, excluding submodules
-          ruff format --check python/ bin/*.py backup/*.py --exclude vim/ --exclude gdb/ || true
+          ruff format --check python/ bin/*.py backup/*.py --exclude vim/ --exclude gdb/
 
   yaml-quality:
     name: YAML Quality
