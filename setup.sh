@@ -209,6 +209,7 @@ function pkgs {
 		ipython3 \
 		jq \
 		mosh \
+		shellcheck \
 		tmux \
 		zsh
 
