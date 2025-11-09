@@ -226,6 +226,27 @@ function ack {
     curl https://beyondgrep.com/ack-2.22-single-file > ~/bin/ack && chmod 0755 ~/bin/ack
 }
 
+function gh {
+	# Install GitHub CLI (gh) from official repository
+	# Check if gh is already installed
+	if command -v gh &> /dev/null; then
+		echo "gh is already installed, skipping..."
+		return 0
+	fi
+
+	echo "Installing GitHub CLI (gh)..."
+
+	# Add GitHub CLI repository
+	sudo mkdir -p -m 755 /etc/apt/keyrings
+	curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null
+	sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+	echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+
+	# Update and install
+	sudo apt-get update
+	sudo apt-get -y install gh
+}
+
 function claude {
 	DOT_CLAUDE_DIR=~/github/mithro/dot-claude
 
@@ -266,6 +287,7 @@ linkit vim
 pkgs
 
 ack
+gh
 ssh
 claude
 
