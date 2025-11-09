@@ -70,16 +70,8 @@ jobs:
 
       - name: Run yamllint
         run: |
-          # Lint YAML files
-          # Allow "rcfiles" to stay lowercase even at start of comments
-          yamllint -d "{
-            extends: default,
-            rules: {
-              line-length: {max: 120},
-              truthy: {check-keys: false},
-              comments: {require-starting-space: true, min-spaces-from-content: 1}
-            }
-          }" .github/
+          # Lint YAML files using .yamllint config
+          yamllint -c .yamllint .github/
 
   file-quality:
     name: File Quality Checks
