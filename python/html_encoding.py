@@ -18,17 +18,23 @@
 
 import re
 
+
 def findencoding(page):
-  match = re.search("text/html; charset=([A-Za-z0-9-]+)", page)
-  if not match:
-    return None
-  return match.groups()[0]
+    match = re.search("text/html; charset=([A-Za-z0-9-]+)", page)
+    if not match:
+        return None
+    return match.groups()[0]
 
 
 if __name__ == "__main__":
-  assert findencoding('content="text/html; charset=gb2312;"') == "gb2312"
-  assert findencoding('<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" /> ') == "ISO-8859-1"
-  assert findencoding('<meta http-equiv="Content-Type" content="text/html;') is None
-  assert findencoding('Content-Type: text/html') is None
-  assert findencoding('Content-Type: text/html; charset=ISO-8859-1') == "ISO-8859-1"
-  assert findencoding('Content-Type: text/html; charset=UTF-8') == "UTF-8"
+    assert findencoding('content="text/html; charset=gb2312;"') == "gb2312"
+    assert (
+        findencoding(
+            '<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" /> '
+        )
+        == "ISO-8859-1"
+    )
+    assert findencoding('<meta http-equiv="Content-Type" content="text/html;') is None
+    assert findencoding("Content-Type: text/html") is None
+    assert findencoding("Content-Type: text/html; charset=ISO-8859-1") == "ISO-8859-1"
+    assert findencoding("Content-Type: text/html; charset=UTF-8") == "UTF-8"

@@ -17,23 +17,24 @@
 Convert HTTP headers into a dictionary.
 """
 
+
 class HTTPHeaders(dict):
-  def __init__(self, values):
-    for header in values.split("\n"):
-      if ':' not in header:
-        continue
-      key, value = header.split(': ', 1)
-      if ';' in value:
-        parts = value.strip().split('; ')
-        for i in range(0, len(parts)):
-          if '=' in parts[i]:
-            parts[i] = parts[i].split('=')
-        value = parts
-      self[key] = value
+    def __init__(self, values):
+        for header in values.split("\n"):
+            if ":" not in header:
+                continue
+            key, value = header.split(": ", 1)
+            if ";" in value:
+                parts = value.strip().split("; ")
+                for i in range(0, len(parts)):
+                    if "=" in parts[i]:
+                        parts[i] = parts[i].split("=")
+                value = parts
+            self[key] = value
 
 
 if __name__ == "__main__":
-  a = HTTPHeaders("""\
+    a = HTTPHeaders("""\
 HTTP/1.1 200 OK
 Date: Tue, 18 Nov 2008 06:23:46 GMT
 Server: Apache/2.2.3 (Debian) DAV/2 SVN/1.4.2 mod_ssl/2.2.3 OpenSSL/0.9.8c mod_wsgi/2.3 Python/2.4.4
@@ -43,4 +44,4 @@ Accept-Ranges: bytes
 Content-Length: 17533
 Content-Type: text/html; charset=UTF-8
 """)
-  print(a)
+    print(a)
