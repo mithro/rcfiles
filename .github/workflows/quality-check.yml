@@ -1,0 +1,85 @@
+name: Quality Checks
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false  # Don't check submodules
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: '.'
+          severity: warning
+          ignore_paths: >-
+            vim/bundle
+            vim/bundle-disable
+            gdb/gdb-dashboard
+
+  python-quality:
+    name: Python Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false  # Don't check submodules
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff linter
+        run: |
+          # Lint Python files, excluding submodules
+          ruff check python/ bin/*.py backup/*.py --exclude vim/ --exclude gdb/ || true
+
+      - name: Run ruff formatter check
+        run: |
+          # Check formatting, excluding submodules
+          ruff format --check python/ bin/*.py backup/*.py --exclude vim/ --exclude gdb/ || true
+
+  file-quality:
+    name: File Quality Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Check for trailing whitespace
+        run: |
+          # Check for trailing whitespace in shell and Python files
+          # Exclude submodules and generated files
+          if git grep -n '[[:space:]]$' -- \
+            '*.sh' '*.py' '*.bash' \
+            ':!vim/bundle*' \
+            ':!gdb/gdb-dashboard' \
+            ':!.git*'; then
+            echo "Error: Trailing whitespace found"
+            exit 1
+          fi
+        continue-on-error: true
+
+      - name: Check for tabs in Python files
+        run: |
+          # Python should use spaces, not tabs
+          if git grep -n $'\t' -- '*.py' \
+            ':!vim/bundle*' \
+            ':!gdb/gdb-dashboard'; then
+            echo "Error: Tabs found in Python files (use spaces)"
+            exit 1
+          fi
+        continue-on-error: true
