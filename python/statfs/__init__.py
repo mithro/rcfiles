@@ -1,4 +1,4 @@
-#!/usr/bin/python2.4
+#!/usr/bin/env python3
 #
 # Copyright 2011 Google Inc. All Rights Reserved.
 
@@ -165,9 +165,9 @@ def main():
   else:
     path = sys.argv[0]
 
-  print "Path %s" % path,
+  print("Path %s" % path, end=' ')
   details = statfs(path)
-  print "is on a %s filesystem" % f_types[details.f_type]
+  print("is on a %s filesystem" % f_types[details.f_type])
 
 
 if __name__ == "__main__":

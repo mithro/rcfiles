@@ -6,13 +6,13 @@ import sys
 try:
     sys.stdout.write(u"\u2603")
     sys.stdout.write(u"\b")
-except UnicodeEncodeError, e:
+except UnicodeEncodeError:
     pass
 
 try:
     sys.stderr.write(u"\u2603")
     sys.stderr.write(u"\b")
-except UnicodeEncodeError, e:
+except UnicodeEncodeError:
     pass
 
 if sys.stdout.encoding != "UTF-8" or sys.stderr.encoding != "UTF-8":
@@ -38,11 +38,11 @@ if sys.stdout.encoding != "UTF-8" or sys.stderr.encoding != "UTF-8":
 try:
     sys.stdout.write(u"\u2603")
     sys.stdout.write(u"\b")
-except UnicodeEncodeError, e:
+except UnicodeEncodeError as e:
     raise SystemError("Unable to write unicode on stdout (encoding %s).\n%s" % (sys.stdout.encoding, e))
 
 try:
     sys.stderr.write(u"\u2603")
     sys.stderr.write(u"\b")
-except UnicodeEncodeError, e:
+except UnicodeEncodeError as e:
     raise SystemError("Unable to write unicode on stderr (encoding %s).\n%s" % (sys.stderr.encoding, e))

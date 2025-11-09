@@ -1,4 +1,4 @@
-#!/usr/bin/python2.4
+#!/usr/bin/env python3
 #
 # Copyright 2001 Alex Martelli.
 # License: MIT
@@ -26,9 +26,9 @@ def callersname():
     return sys._getframe(2).f_code.co_name
 
 if __name__ == "__main__":
-  print "main -", whoami()
+  print("main -", whoami())
 
   def call():
-    print "call - whoami -", whoami()
-    print "call - caller -", callersname()
+    print("call - whoami -", whoami())
+    print("call - caller -", callersname())
   call()

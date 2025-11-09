@@ -1,4 +1,4 @@
-#! /usr/bin/python2.4
+#!/usr/bin/env python3
 #
 # Copyright 2008 Google Inc. All Rights Reserved.
 #
@@ -20,7 +20,7 @@ Convert HTTP headers into a dictionary.
 class HTTPHeaders(dict):
   def __init__(self, values):
     for header in values.split("\n"):
-      if not ':' in header:
+      if ':' not in header:
         continue
       key, value = header.split(': ', 1)
       if ';' in value:
@@ -43,4 +43,4 @@ Accept-Ranges: bytes
 Content-Length: 17533
 Content-Type: text/html; charset=UTF-8
 """)
-  print a
+  print(a)

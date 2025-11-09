@@ -1,6 +1,5 @@
 
 import os
-import re
 import sys
 from progressbar import *
 
@@ -19,18 +18,18 @@ while True:
     pbar.update(i*512)
     pos = f.tell()
     sector = f.read(512)
-    if sector.startswith("SQLite format 3"):
-        print
-        print "Found db at ", pos, hex(pos)
+    if sector.startswith(b"SQLite format 3"):
+        print()
+        print("Found db at", pos, hex(pos))
         oname = '%s.sqlite3' % pos
-        out = open(oname, 'w')
+        out = open(oname, 'wb')
         out.write(sector)
         out.write(f.read(one_mb))
         out.close()
-        print oname
+        print(oname)
         sys.stdout.flush()
         os.system('sqlite3 %s .tables' % oname)
-        print
+        print()
         f.seek(-one_mb, os.SEEK_CUR)
 
     i += 1

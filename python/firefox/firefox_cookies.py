@@ -5,6 +5,10 @@
 #         Tim Ansell <mithro AT mithis DOT com>
 # License: MIT
 
+import cookielib
+import firefox_finder
+import os
+
 def sqlite2cookie(filename):
     from cStringIO import StringIO
     try:
@@ -36,11 +40,6 @@ def sqlite2cookie(filename):
     cookie_jar._really_load(s, '', True, True)
     return cookie_jar
 
-import cookielib
-import firefox_finder
-import os
-import sys
-
 def get_cookie_jar():
     profile_dir = firefox_finder.get_profile_dir()
     if os.path.join(profile_dir, 'cookies.sqlite'):
@@ -60,7 +59,7 @@ def get_cookie_jar_interactive():
     elif os.path.join(profile_dir, 'cookies.txt'):
         cookie_jar = os.path.join(profile_dir, 'cookies.txt')
 
-    path = raw_input('Path to cookie jar file [%s]: ' % cookie_jar)
+    path = input('Path to cookie jar file [%s]: ' % cookie_jar)
     if path.strip():
         # Some input specified, set it
         cookie_jar = os.path.realpath(os.path.expanduser(path.strip()))
@@ -71,6 +70,5 @@ def get_cookie_jar_interactive():
         return cookielib.MozillaCookieJar(cookie_jar)
 
 if __name__ == "__main__":
-    import pprint
     for cookie in get_cookie_jar_interactive():
-      print cookie
+      print(cookie)

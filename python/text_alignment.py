@@ -1,4 +1,4 @@
-#!/usr/bin/python2.4
+#!/usr/bin/env python3
 #
 # Copyright 2009 Google Inc.
 #
@@ -23,13 +23,13 @@ def termwidth(s):
     (It works on the theory that any character with a unicode value above
     DOUBLEWIDTH takes two spaces to be rendered.)
   """
-  l = 0
+  width = 0
   for c in s:
     if ord(c) > DOUBLEWIDTH:
-      l += 2
+      width += 2
     else:
-      l += 1
-  return l
+      width += 1
+  return width
 
 def spacesplit(input):
   """\
@@ -71,7 +71,6 @@ def lines(input):
     lines is a generator that works exactly like readlines() except it is more
     reliable with crappy input.
   """
-  lines = []
   while True:
     b = " "
     while b[-1] != '\n':

@@ -28,7 +28,7 @@ def findencoding(page):
 if __name__ == "__main__":
   assert findencoding('content="text/html; charset=gb2312;"') == "gb2312"
   assert findencoding('<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" /> ') == "ISO-8859-1"
-  assert findencoding('<meta http-equiv="Content-Type" content="text/html;') == None
-  assert findencoding('Content-Type: text/html') == None
+  assert findencoding('<meta http-equiv="Content-Type" content="text/html;') is None
+  assert findencoding('Content-Type: text/html') is None
   assert findencoding('Content-Type: text/html; charset=ISO-8859-1') == "ISO-8859-1"
   assert findencoding('Content-Type: text/html; charset=UTF-8') == "UTF-8"

@@ -76,7 +76,7 @@ class CSVReader(object):
       while True:
         try:
           b = self.byte()
-        except EOFError, e:
+        except EOFError:
           yield self.args
           raise StopIteration
 
@@ -94,13 +94,13 @@ test,"\r\
 \n\t\t", test\r\n\
 a,b,"te,st""t\0est"\r\n""")
 
-  print "This CSVReader:"
+  print("This CSVReader:")
   for x in CSVReader(s):
-    print repr(x)
+    print(repr(x))
 
   s.seek(0)
 
   import csv
-  print "Original csv.CSVReader"
+  print("Original csv.CSVReader")
   for x in csv.reader(s):
-    print repr(x)
+    print(repr(x))

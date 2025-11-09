@@ -6,7 +6,6 @@
 # License: MIT
 
 import os
-import sys
 import logging
 import ConfigParser
 
@@ -17,7 +16,7 @@ def _get_firefox_profile_dir (path):
         return None
 
     # Open profiles.ini and read the path for the first profile
-    profiles_ini_reader = ConfigParser.ConfigParser();
+    profiles_ini_reader = ConfigParser.ConfigParser()
     profiles_ini_reader.readfp(open(profiles_ini))
     default_profile = 'Profile0'
     for section in profiles_ini_reader.sections():
@@ -42,7 +41,7 @@ def _get_firefox_nt_profile_dir ():
         logging.error('Cannot load winreg -- running windows and win32api loaded?')
     key = _winreg.OpenKey(_winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders')
     try:
-        ret = _winreg.QueryValueEx(key, 'AppData')
+        result = _winreg.QueryValueEx(key, 'AppData')
     except WindowsError:
         return None
     else:
@@ -60,7 +59,7 @@ def _get_firefox_posix_profile_dir ():
 def _get_firefox_mac_profile_dir ():
     # First of all...
     result = _get_firefox_profile_dir(os.path.expanduser(r'~/Library/Mozilla/Firefox/Profiles'))
-    if result == None:
+    if result is None:
         result = _get_firefox_profile_dir(os.path.expanduser(r'~/Library/Application Support/Firefox/Profiles'))
     return result
 
@@ -76,11 +75,11 @@ def get_profile_dir():
 def get_profile_dir_interactive():
     profile_dir = get_profile_dir()
 
-    path = raw_input('Path to firefox profile file [%s]: ' % profile_dir)
+    path = input('Path to firefox profile file [%s]: ' % profile_dir)
     if path.strip():
         # Some input specified, set it
         profile_dir = os.path.realpath(os.path.expanduser(path.strip()))
     return profile_dir
 
 if __name__ == "__main__":
-    print get_profile_dir()
+    print(get_profile_dir())
