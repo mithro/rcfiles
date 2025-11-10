@@ -1,0 +1,19 @@
+# Ensure SHELL is set to bash
+
+# Find bash location and set SHELL if not already set to bash
+if [ -z "$SHELL" ] || [[ ! "$SHELL" =~ bash$ ]]; then
+    # Try common bash locations
+    if [ -x /bin/bash ]; then
+        export SHELL=/bin/bash
+    elif [ -x /usr/bin/bash ]; then
+        export SHELL=/usr/bin/bash
+    elif [ -x /usr/local/bin/bash ]; then
+        export SHELL=/usr/local/bin/bash
+    else
+        # Fall back to command -v bash
+        BASH_PATH=$(command -v bash)
+        if [ -n "$BASH_PATH" ]; then
+            export SHELL="$BASH_PATH"
+        fi
+    fi
+fi
