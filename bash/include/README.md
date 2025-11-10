@@ -31,6 +31,14 @@ Sets up the Go programming language environment.
 
 Environment variables for KiCad PCB design software (when installed).
 
+### `shell`
+
+Ensures the SHELL environment variable is set to bash.
+
+**Behavior**: Checks if `$SHELL` is unset or not pointing to bash, and sets it to the detected bash path
+
+**Note**: Tries common locations (`/bin/bash`, `/usr/bin/bash`, `/usr/local/bin/bash`) and falls back to `command -v bash`
+
 ## Adding New Scripts
 
 To add a new script:
