@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""Safe git force push with lease that requires explicit branch name."""
+import sys
+import subprocess
+
+def main():
+    if len(sys.argv) == 2:
+        # One argument: branch name (use tracked remote or origin)
+        branch = sys.argv[1]
+        try:
+            # Try to get tracked remote for current branch
+            current_branch = subprocess.check_output(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                stderr=subprocess.DEVNULL,
+                text=True
+            ).strip()
+            remote = subprocess.check_output(
+                ["git", "config", f"branch.{current_branch}.remote"],
+                stderr=subprocess.DEVNULL,
+                text=True
+            ).strip()
+        except subprocess.CalledProcessError:
+            remote = "origin"
+    elif len(sys.argv) == 3:
+        # Two arguments: remote and branch
+        remote = sys.argv[1]
+        branch = sys.argv[2]
+    else:
+        print("Error: Usage: git safe-force-push-lease [remote] <branch>", file=sys.stderr)
+        print("  One argument:  git safe-force-push-lease <branch>  (uses tracked remote or origin)", file=sys.stderr)
+        print("  Two arguments: git safe-force-push-lease <remote> <branch>", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Force pushing (with lease) {branch} to {remote}...")
+    subprocess.run(["git", "push", "--force-with-lease", remote, branch], check=True)
+
+if __name__ == "__main__":
+    main()
