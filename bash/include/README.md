@@ -27,6 +27,14 @@ Sets up the Go programming language environment.
 
 **PATH additions**: Adds `$GOPATH/bin` and `$GOROOT/bin` to PATH
 
+### `path`
+
+Ensures user bin directories are in PATH.
+
+**PATH additions**: Adds `~/.local/bin` and `~/bin` to PATH (if they exist)
+
+**Note**: Uses case statement to avoid duplicate PATH entries if already present
+
 ### `kicad-env.sh`
 
 Environment variables for KiCad PCB design software (when installed).
