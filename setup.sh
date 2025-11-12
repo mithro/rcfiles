@@ -58,8 +58,12 @@ function linkit {
 		exit 1
 	fi
 
-	for FP in $(ls $RCFILES/$1/* | grep -v "-"); do
-		if [ ! -f $FP ]; then
+	for FP in "$RCFILES/$1"/*; do
+		if [ ! -f "$FP" ]; then
+			continue
+		fi
+		# Skip files with hyphens in the name
+		if [[ "$(basename "$FP")" == *"-"* ]]; then
 			continue
 		fi
 

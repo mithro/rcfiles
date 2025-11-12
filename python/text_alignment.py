@@ -1,4 +1,4 @@
-#!/usr/bin/python2.4
+#!/usr/bin/env python3
 #
 # Copyright 2009 Google Inc.
 #
@@ -15,24 +15,27 @@
 # limitations under the License.
 
 # FIXME: This could be done better...
-DOUBLEWIDTH = 0x2dff
+DOUBLEWIDTH = 0x2DFF
+
+
 def termwidth(s):
-  """\
+    """\
     Calculate the width of a string on a fixed with terminal.
 
     (It works on the theory that any character with a unicode value above
     DOUBLEWIDTH takes two spaces to be rendered.)
   """
-  l = 0
-  for c in s:
-    if ord(c) > DOUBLEWIDTH:
-      l += 2
-    else:
-      l += 1
-  return l
+    width = 0
+    for c in s:
+        if ord(c) > DOUBLEWIDTH:
+            width += 2
+        else:
+            width += 1
+    return width
+
 
 def spacesplit(input):
-  """\
+    """\
     This function splits works like normal split except that it keeps any extra
     white space with the previous bit. For example:
 
@@ -42,42 +45,43 @@ def spacesplit(input):
 
     FIXME: This should probably match on any whitespace not just " "
   """
-  w = []
-  for bit in input.split(" "):
-    if len(bit) == 0:
-      w[-1] += " "
-    else:
-      w.append(bit)
-  return w
+    w = []
+    for bit in input.split(" "):
+        if len(bit) == 0:
+            w[-1] += " "
+        else:
+            w.append(bit)
+    return w
+
 
 def match(left, right):
-  """\
+    """\
     match tries to make each element in the right list the same length as
     each element in the left list. It does this by manipulating trailing
     white space.
   """
-  newright = []
-  for a, b in zip(left, right):
-    b = b.strip()
+    newright = []
+    for a, b in zip(left, right):
+        b = b.strip()
 
-    diff = len(a) - len(b)
-    if diff > 0:
-      b = b+" "*diff
-    newright.append(b)
-  return newright
+        diff = len(a) - len(b)
+        if diff > 0:
+            b = b + " " * diff
+        newright.append(b)
+    return newright
+
 
 def lines(input):
-  """\
+    """\
     lines is a generator that works exactly like readlines() except it is more
     reliable with crappy input.
   """
-  lines = []
-  while True:
-    b = " "
-    while b[-1] != '\n':
-      w = input.read(1)
-      if len(w) == 0:
+    while True:
+        b = " "
+        while b[-1] != "\n":
+            w = input.read(1)
+            if len(w) == 0:
+                yield b[1:-1]
+                raise StopIteration
+            b += w
         yield b[1:-1]
-        raise StopIteration
-      b += w
-    yield b[1:-1]

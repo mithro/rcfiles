@@ -1,19 +1,19 @@
 #! /bin/sh
 
-if [ x$(git diff) != x"" ]; then
+if [ "x$(git diff)" != x"" ]; then
   print "Please commit your changes first!"
   exit 1
 fi
 
 
 CURRENT_BRANCH=$(git status -b | head -1 | rgrep "^# On branch" | sed -e's/^# On branch //')
-if [ x$CURRENT_BRANCH == x"" ]; then
+if [ "x$CURRENT_BRANCH" = x"" ]; then
   print "Not on a branch!"
   exit 1
 fi
 
 TRUNK_BRANCH=${1:-master}
-if [ x$CURRENT_BRANCH == $TRUNK_BRANCH ]; then
+if [ "x$CURRENT_BRANCH" = "x$TRUNK_BRANCH" ]; then
   print "On $TRUNK_BRANCH already!"
   exit 1
 fi

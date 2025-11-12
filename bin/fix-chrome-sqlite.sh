@@ -14,7 +14,7 @@ find -type f -exec file \{\} \; | grep SQLite | sed -e's/: SQLite.*//' | while r
 	echo "Fixing '$db'"
 	sqlite3 "$db" .tables 2>&1 | grep -i lock > /dev/null 2>&1 && export LOCKED='locked' || export LOCKED='unlocked'
 	echo $db is $LOCKED
-	if [ x$LOCKED == xlocked ]; then
+	if [ "x$LOCKED" = "xlocked" ]; then
 		cp "$db" "$db.tmp"
 		mv "$db.tmp" "$db"
 		sqlite3 "$db" .tables 2>&1 | grep -i lock > /dev/null 2>&1 && export LOCKED='locked' || export LOCKED='unlocked'

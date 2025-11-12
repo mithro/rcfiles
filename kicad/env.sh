@@ -1,3 +1,4 @@
+#!/bin/bash
 # Normally in /etc/profile.d/kicad-env.sh
 # ---
 # Env var for kicad github plugin
