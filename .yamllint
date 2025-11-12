@@ -1,0 +1,16 @@
+---
+# yamllint configuration
+# See https://yamllint.readthedocs.io/
+
+extends: default
+
+rules:
+  line-length:
+    max: 120
+  truthy:
+    # Allow GitHub Actions 'on' key without quotes
+    check-keys: false
+  comments:
+    # Allow "rcfiles" to stay lowercase even at start of comments
+    require-starting-space: true
+    min-spaces-from-content: 1
