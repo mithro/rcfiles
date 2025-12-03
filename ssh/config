@@ -4,7 +4,7 @@ Host *
 	# Check for sshfp keys in DNS
 	VerifyHostKeyDNS yes
 	# Use a control channel, use -S none to disable.
-	ControlPath ~/.ssh/tmp/master-%r@%h:%p
+	ControlPath ~/.ssh/tmp/master-%j-%r@%h:%p
 	ControlMaster auto
 	# Keep those connections alive!
 	TCPKeepAlive yes
