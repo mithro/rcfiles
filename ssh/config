@@ -250,3 +250,7 @@ Host prod.slidelint.net
 	HostName prod.slidelint.net
 	User tim
 	Port 2222
+
+Host hf.co
+	User git
+	IdentityFile ~/.ssh/keys/new_misc_key
