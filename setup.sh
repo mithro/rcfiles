@@ -217,6 +217,8 @@ function pkgs {
 		tmux \
 		zsh
 
+#		iprint \
+
 	if [ $SERVER -ne 1 ]; then
 		sudo apt-get -y install \
 			gitk
