@@ -1,0 +1,71 @@
+# Terminal title management with override support
+#
+# Problem: Ubuntu's ~/.bashrc hardcodes the terminal title in PS1:
+#   PS1="\[\e]0;...\u@\h: \w\a\]$PS1"
+# This overwrites any manual title changes on every prompt.
+#
+# Solution: Replace the hardcoded title with a conditional expansion that
+# checks TERMINAL_TITLE first. If set, use it; otherwise use the default.
+#
+# Usage:
+#   set-title "My Title"  - Set persistent title override
+#   set-title             - Clear override, return to default (user@host: ~/dir)
+#
+# The TERMINAL_TITLE variable can also be set directly:
+#   export TERMINAL_TITLE="My Title"
+#   unset TERMINAL_TITLE
+#
+
+# Only modify PS1 for terminals that support title setting (OSC 0)
+case "$TERM" in
+    xterm*|rxvt*|gnome*|screen*|tmux*)
+        # Strip any existing title-setting escape sequence from PS1
+        # Ubuntu's .bashrc prepends: \[\e]0;...\a\]
+        # We need to remove this so we can add our own conditional version
+        case "$PS1" in
+            '\[\e]0;'*'\a\]'*)
+                # Remove everything from start up to and including \a\]
+                PS1="${PS1#*\\a\\]}"
+                ;;
+        esac
+
+        # Re-add title with conditional: use TERMINAL_TITLE if set, else default
+        # This is pure variable expansion - zero fork overhead per prompt
+        #
+        # Format: \[\e]0;TITLE\a\]
+        #   \[      - Start non-printing sequence (for readline)
+        #   \e]0;   - OSC 0: Set window title and icon name
+        #   TITLE   - The title string (our conditional expansion)
+        #   \a      - BEL character (terminates OSC sequence)
+        #   \]      - End non-printing sequence
+        #
+        # The ${TERMINAL_TITLE:-...} expansion:
+        #   - If TERMINAL_TITLE is set and non-empty, use its value
+        #   - Otherwise, use the default: user@host: ~/path
+        PS1='\[\e]0;${TERMINAL_TITLE:-${debian_chroot:+($debian_chroot)}$USER@${HOSTNAME%%.*}: ${PWD/#$HOME/\~}}\a\]'"$PS1"
+        ;;
+esac
+
+# Function to set terminal title (persistent override)
+#
+# This function sets the TERMINAL_TITLE variable which is expanded in PS1
+# on every prompt. It also immediately updates the title so you don't have
+# to wait for the next prompt.
+#
+# Usage:
+#   set-title "Build Server"  - Set persistent title
+#   set-title                 - Clear override, return to default
+#   set-title ""              - Clear override, return to default
+#
+set-title() {
+    if [ -z "$*" ]; then
+        # No args or empty string: clear override, return to automatic title
+        unset TERMINAL_TITLE
+        # Update title immediately to show default (next prompt will also use default)
+        printf '\033]0;%s\007' "${debian_chroot:+($debian_chroot)}$USER@${HOSTNAME%%.*}: ${PWD/#$HOME/\~}"
+    else
+        # Set the override and update title immediately
+        export TERMINAL_TITLE="$*"
+        printf '\033]0;%s\007' "$TERMINAL_TITLE"
+    fi
+}
