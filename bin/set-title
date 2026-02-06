@@ -1,0 +1,11 @@
+#!/bin/bash
+# Set the GNOME Terminal tab/window title
+# Usage: set-title "My Title"
+
+if [ $# -eq 0 ]; then
+    echo "Usage: set-title <title>" >&2
+    exit 1
+fi
+
+# OSC 0 sets both icon name and window title (works for tab title in GNOME Terminal)
+printf '\033]0;%s\007' "$*"
