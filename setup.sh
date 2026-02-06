@@ -212,6 +212,7 @@ function pkgs {
 		htop \
 		ipython3 \
 		jq \
+		kitty-terminfo \
 		mosh \
 		shellcheck \
 		tmux \
