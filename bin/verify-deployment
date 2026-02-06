@@ -1,0 +1,314 @@
+#!/usr/bin/env python3
+"""Verify that all rcfiles configurations are properly deployed.
+
+Checks symlinks, generated files, bin/ scripts, SSH config, git sync
+status, and submodule state against what setup.sh would deploy.
+"""
+
+import os
+import subprocess
+import sys
+
+
+RCFILES = os.path.realpath(os.path.join(os.path.dirname(__file__), '..'))
+HOME = os.path.expanduser('~')
+
+# Directories that setup.sh passes to linkit()
+LINKIT_DIRS = ['ack', 'bash', 'git', 'other', 'package', 'tmux', 'vim']
+
+
+class Checker:
+    def __init__(self):
+        self.ok_count = 0
+        self.issues = []
+        self.infos = []
+
+        self.hostname = self._run(['hostname', '-f'])
+        self.domain = self._run(['hostname', '-d'])
+        parts = self.hostname.rsplit('.', 2)
+        self.base_domain = '.'.join(parts[-2:]) if len(parts) >= 2 else self.hostname
+
+    @staticmethod
+    def _run(cmd, cwd=None):
+        r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
+        return r.stdout.strip()
+
+    def ok(self, msg):
+        self.ok_count += 1
+        print(f'  OK: {msg}')
+
+    def issue(self, msg):
+        self.issues.append(msg)
+        print(f'  !! {msg}')
+
+    def info(self, msg):
+        self.infos.append(msg)
+        print(f'  -- {msg}')
+
+    # ----- linkit directories -----
+
+    def check_linkit_dirs(self):
+        print(f'Host: {self.hostname}  Domain: {self.domain}  Base: {self.base_domain}')
+        print()
+        for d in LINKIT_DIRS:
+            self._check_linkit_dir(d)
+
+    def _check_linkit_dir(self, d):
+        src_dir = os.path.join(RCFILES, d)
+        if not os.path.isdir(src_dir):
+            self.issue(f'source directory missing: {src_dir}')
+            return
+
+        print(f'=== {d}/ ===')
+        for fname in sorted(os.listdir(src_dir)):
+            fpath = os.path.join(src_dir, fname)
+            if not os.path.isfile(fpath):
+                continue
+            # setup.sh skips files containing hyphens (hostname-specific overrides)
+            if '-' in fname:
+                continue
+            self._check_linkit_file(d, fname, fpath)
+        print()
+
+    def _check_linkit_file(self, d, fname, fpath):
+        target = os.path.join(HOME, f'.{fname}')
+
+        # Check whether hostname-specific overrides exist
+        has_overrides = any(
+            os.path.isfile(f'{fpath}-{suffix}')
+            for suffix in [self.base_domain, self.domain, self.hostname]
+            if suffix
+        )
+
+        if has_overrides:
+            self._check_generated_file(d, fname, fpath, target)
+        else:
+            self._check_symlink(f'{d}/{fname}', fpath, target, display_name=f'~/.{fname}')
+
+    def _check_generated_file(self, d, fname, fpath, target):
+        if os.path.islink(target):
+            self.issue(f'~/.{fname} is a symlink but should be generated (has hostname overrides)')
+        elif os.path.isfile(target):
+            with open(fpath, 'r', errors='replace') as f:
+                base_content = f.read()
+            with open(target, 'r', errors='replace') as f:
+                target_content = f.read()
+            if base_content in target_content:
+                self.ok(f'{d}/{fname} -> ~/.{fname} (generated)')
+            else:
+                self.issue(f'~/.{fname} stale: does not contain current base content from {d}/{fname}')
+        else:
+            self.issue(f'~/.{fname} missing (expected generated from {d}/{fname})')
+
+    # ----- bin/ -----
+
+    def check_bin(self):
+        print('=== bin/ ===')
+        bin_dir = os.path.join(RCFILES, 'bin')
+        for fname in sorted(os.listdir(bin_dir)):
+            fpath = os.path.join(bin_dir, fname)
+            if not os.path.isfile(fpath):
+                continue
+            # setup.sh links all files; skip non-executable support files
+            if fname.endswith('.md'):
+                continue
+            target = os.path.join(HOME, 'bin', fname)
+            self._check_symlink(f'bin/{fname}', fpath, target, display_name=f'~/bin/{fname}')
+        print()
+
+    # ----- SSH -----
+
+    def check_ssh(self):
+        print('=== ssh/ ===')
+
+        ssh_config = os.path.join(HOME, '.ssh', 'config')
+        self._check_symlink(
+            'ssh/config',
+            os.path.join(RCFILES, 'ssh', 'config'),
+            ssh_config,
+            display_name='~/.ssh/config',
+        )
+
+        ssh_keys = os.path.join(HOME, '.ssh', 'keys')
+        self._check_symlink(
+            'ssh/keys',
+            os.path.join(RCFILES, 'ssh', 'keys'),
+            ssh_keys,
+            display_name='~/.ssh/keys',
+        )
+
+        ssh_tmp = os.path.join(HOME, '.ssh', 'tmp')
+        if os.path.isdir(ssh_tmp):
+            self.ok('~/.ssh/tmp/ exists')
+        else:
+            self.issue('~/.ssh/tmp/ missing')
+        print()
+
+    # ----- claude -----
+
+    def check_claude(self):
+        print('=== claude ===')
+        claude_dir = os.path.join(HOME, '.claude')
+        expected = os.path.join(HOME, 'github', 'mithro', 'dot-claude')
+        self._check_symlink('~/.claude', expected, claude_dir, display_name='~/.claude')
+        print()
+
+    # ----- misc -----
+
+    def check_misc(self):
+        print('=== misc ===')
+        shell_logs = os.path.join(HOME, '.shell_logs')
+        if os.path.isdir(shell_logs):
+            self.ok('~/.shell_logs/ exists')
+        else:
+            self.issue('~/.shell_logs/ missing')
+
+        rcfiles_link = os.path.join(HOME, 'rcfiles')
+        self._check_symlink(
+            '~/rcfiles',
+            os.path.join(HOME, 'github', 'mithro', 'rcfiles'),
+            rcfiles_link,
+            display_name='~/rcfiles',
+        )
+        print()
+
+    # ----- git sync -----
+
+    def check_git_sync(self):
+        print('=== git sync ===')
+
+        # Fetch to get latest remote state
+        subprocess.run(
+            ['git', 'fetch', '--all', '--quiet'],
+            cwd=RCFILES, capture_output=True,
+        )
+
+        branch = self._run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd=RCFILES)
+        print(f'  Current branch: {branch}')
+
+        # Find the tracking remote for the current branch
+        tracking = self._run(
+            ['git', 'rev-parse', '--abbrev-ref', f'{branch}@{{upstream}}'],
+            cwd=RCFILES,
+        )
+
+        if not tracking:
+            self.info(f'{branch} has no upstream tracking branch')
+        else:
+            ahead_log = self._run(
+                ['git', 'log', '--oneline', f'{tracking}..HEAD'],
+                cwd=RCFILES,
+            )
+            behind_log = self._run(
+                ['git', 'log', '--oneline', f'HEAD..{tracking}'],
+                cwd=RCFILES,
+            )
+
+            ahead = ahead_log.split('\n') if ahead_log else []
+            behind = behind_log.split('\n') if behind_log else []
+
+            if behind:
+                self.issue(f'{branch} is {len(behind)} commit(s) behind {tracking}:')
+                for c in behind:
+                    print(f'       {c}')
+            else:
+                self.ok(f'{branch} has all commits from {tracking}')
+
+            if ahead:
+                self.info(f'{branch} is {len(ahead)} commit(s) ahead of {tracking} (not yet pushed):')
+                for c in ahead:
+                    print(f'       {c}')
+
+        # Check for stale local branches tracking deleted remotes
+        branches_output = self._run(['git', 'branch', '-vv'], cwd=RCFILES)
+        for line in branches_output.split('\n'):
+            if ': gone]' in line:
+                stale_branch = line.strip().split()[0].lstrip('*').strip()
+                self.issue(f'stale branch {stale_branch!r} tracks a deleted remote')
+
+        # Check for uncommitted changes
+        status = self._run(['git', 'status', '--porcelain'], cwd=RCFILES)
+        if status:
+            modified = [l for l in status.split('\n') if l and not l.startswith('??')]
+            untracked = [l for l in status.split('\n') if l.startswith('??')]
+            if modified:
+                self.info(f'{len(modified)} modified/staged file(s) in working tree:')
+                for m in modified:
+                    print(f'       {m}')
+            if untracked:
+                self.info(f'{len(untracked)} untracked file(s):')
+                for u in untracked:
+                    print(f'       {u}')
+        else:
+            self.ok('working tree clean')
+        print()
+
+    # ----- submodules -----
+
+    def check_submodules(self):
+        print('=== submodules ===')
+        output = self._run(['git', 'submodule', 'status', '--recursive'], cwd=RCFILES)
+        if not output:
+            self.info('no submodules defined')
+            print()
+            return
+
+        lines = [l for l in output.split('\n') if l.strip()]
+        uninit = [l for l in lines if l.startswith('-')]
+        modified = [l for l in lines if l.startswith('+')]
+
+        if uninit:
+            for u in uninit:
+                self.issue(f'uninitialized submodule: {u.strip()}')
+        if modified:
+            for m in modified:
+                self.info(f'submodule has local changes: {m.strip()}')
+
+        good = len(lines) - len(uninit) - len(modified)
+        if good > 0:
+            self.ok(f'{good}/{len(lines)} submodules OK')
+        if uninit:
+            self.issue(f'{len(uninit)} submodule(s) not initialized (run: git submodule update --init --recursive)')
+        print()
+
+    # ----- helpers -----
+
+    def _check_symlink(self, label, expected_target, actual_path, display_name=None):
+        name = display_name or actual_path
+        if os.path.islink(actual_path):
+            resolved = os.path.realpath(actual_path)
+            expected_resolved = os.path.realpath(expected_target)
+            if resolved == expected_resolved:
+                self.ok(f'{name} (linked)')
+            else:
+                self.issue(f'{name} -> {os.readlink(actual_path)} (expected -> {expected_target})')
+        elif os.path.exists(actual_path):
+            self.issue(f'{name} exists but is not a symlink (expected symlink to {expected_target})')
+        else:
+            self.issue(f'{name} missing')
+
+    # ----- run all -----
+
+    def run(self):
+        self.check_linkit_dirs()
+        self.check_bin()
+        self.check_ssh()
+        self.check_claude()
+        self.check_misc()
+        self.check_git_sync()
+        self.check_submodules()
+
+        print('=' * 60)
+        print(f'Verified: {self.ok_count} OK')
+        if self.infos:
+            print(f'Info:     {len(self.infos)} note(s)')
+        if self.issues:
+            print(f'Issues:   {len(self.issues)} problem(s)')
+            return 1
+        else:
+            print('No issues found.')
+            return 0
+
+
+if __name__ == '__main__':
+    sys.exit(Checker().run())

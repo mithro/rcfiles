@@ -47,6 +47,27 @@ Ensures the SHELL environment variable is set to bash.
 
 **Note**: Tries common locations (`/bin/bash`, `/usr/bin/bash`, `/usr/local/bin/bash`) and falls back to `command -v bash`
 
+### `terminal-title`
+
+Manages terminal window/tab title with override support.
+
+**Problem**: Ubuntu's `~/.bashrc` hardcodes the title in PS1, overwriting any manual changes on every prompt.
+
+**Solution**: Replaces the hardcoded title with a conditional `${TERMINAL_TITLE:-default}` expansion in PS1. Zero fork overhead.
+
+**Function**: `set-title`
+- `set-title "My Title"` - Set persistent title override
+- `set-title` - Clear override, return to automatic `user@host: ~/dir`
+
+**Variable**: `TERMINAL_TITLE` - When set, used as terminal title instead of default
+
+**Example**:
+```bash
+set-title "Build Server"  # Title persists across prompts
+# ... do work ...
+set-title                 # Return to default title
+```
+
 ## Adding New Scripts
 
 To add a new script:

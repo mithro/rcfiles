@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""Find all running tmux servers and make them source the tmux config file."""
+
+import os
+import subprocess
+import sys
+
+
+def find_tmux_sockets():
+    """Find all tmux server sockets for the current user."""
+    uid = os.getuid()
+    tmpdir = os.environ.get("TMUX_TMPDIR", "/tmp")
+    socket_dir = os.path.join(tmpdir, f"tmux-{uid}")
+
+    if not os.path.isdir(socket_dir):
+        return []
+
+    sockets = []
+    for entry in os.listdir(socket_dir):
+        path = os.path.join(socket_dir, entry)
+        if os.path.exists(path):
+            sockets.append(path)
+    return sockets
+
+
+def main():
+    config_path = os.path.expanduser("~/.tmux.conf")
+    if not os.path.exists(config_path):
+        print(f"Error: {config_path} does not exist", file=sys.stderr)
+        sys.exit(1)
+
+    sockets = find_tmux_sockets()
+    if not sockets:
+        print("No running tmux servers found.")
+        sys.exit(0)
+
+    for socket in sockets:
+        name = os.path.basename(socket)
+        result = subprocess.run(
+            ["tmux", "-S", socket, "source-file", config_path],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            # List sessions on this server for confirmation
+            sessions = subprocess.run(
+                ["tmux", "-S", socket, "list-sessions", "-F", "#{session_name}"],
+                capture_output=True,
+                text=True,
+            )
+            session_names = sessions.stdout.strip().splitlines()
+            print(f"Reloaded config for server '{name}' ({len(session_names)} session(s): {', '.join(session_names)})")
+        else:
+            print(f"Failed to reload config for server '{name}': {result.stderr.strip()}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()
