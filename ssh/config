@@ -57,6 +57,11 @@ Host 192.168.100.50
 	ControlPath /dev/null
 	ControlMaster no
 
+#Host 192.168.22.44
+#	StrictHostKeyChecking no
+#	CheckHostIP no
+#	UserKnownHostsFile /dev/null
+
 Host 172.16.1.1
 	StrictHostKeyChecking no
 	CheckHostIP no
@@ -70,6 +75,21 @@ Host 10.1.1.1
 	UserKnownHostsFile /dev/null
 	ControlPath /dev/null
 	ControlMaster no
+
+Host micky.mithis.com
+	UserKnownHostsFile ~/.ssh/known_hosts.micky
+
+Host doc.mithis.com
+	UserKnownHostsFile ~/.ssh/known_hosts.doc
+
+Host buddy.mithis.com
+	UserKnownHostsFile ~/.ssh/known_hosts.buddy
+
+Host harken.mithis.com
+	UserKnownHostsFile ~/.ssh/known_hosts.harken
+
+Host big-storage.welland.mithis.com
+	UserKnownHostsFile ~/.ssh/known_hosts.big-storage
 
 # ======================================================
 # Real hosts
