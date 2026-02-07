@@ -13,6 +13,11 @@ Host *
 	PubkeyAcceptedAlgorithms +ssh-rsa
 	HostkeyAlgorithms +ssh-rsa
 
+
+Match exec "test -n '%j'"
+	UserKnownHostsFile ~/.ssh/known_hosts.%j
+	StrictHostKeyChecking accept-new
+
 Include ~/.ssh/config_extra
 
 ## Tunnels
