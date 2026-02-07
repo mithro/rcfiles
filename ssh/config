@@ -1,3 +1,7 @@
+# Legacy KEX algorithms for older device at 192.168.178.2
+#Host 192.168.178.2
+#    KexAlgorithms +diffie-hellman-group1-sha1,diffie-hellman-group14-sha1
+
 # Default Options
 Host *
 	CanonicalizeHostname no
