@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+"""Delegates to ssh-clipboard-xclip if installed, otherwise real xclip.
+
+When the ssh-clipboard-bridge package is installed, it provides the full
+fallback chain: real xclip → kitten direct → daemon socket → error.
+When not installed, falls back to the real /usr/bin/xclip.
+"""
+
+import os
+import sys
+
+REAL_XCLIP = "/usr/bin/xclip"
+
+try:
+    from ssh_clipboard_bridge.xclip import main
+    main()
+except ImportError:
+    if os.path.isfile(REAL_XCLIP):
+        os.execv(REAL_XCLIP, [REAL_XCLIP] + sys.argv[1:])
+    print("xclip: neither ssh-clipboard-bridge nor /usr/bin/xclip available", file=sys.stderr)
+    sys.exit(1)
