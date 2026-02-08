@@ -1,0 +1,19 @@
+# Use kitty's SSH kitten when running inside kitty.
+# This ensures TERM=xterm-kitty is properly set on remote hosts and
+# copies the xterm-kitty terminfo if missing, enabling 256-color and
+# truecolor support in tmux over SSH.
+if [ -n "$KITTY_PID" ] && command -v kitten >/dev/null 2>&1; then
+    alias ssh='kitten ssh'
+fi
+
+# Start clipboard bridge daemon when in SSH session outside tmux.
+# The daemon proxies kitten clipboard requests from inside tmux via
+# a Unix socket, working around tmux's one-way DCS passthrough.
+# It forks immediately (no blocking) and the preflight check handles
+# false positives (non-kitty connections).
+if command -v ssh-clipboard-daemon >/dev/null 2>&1 \
+    && [ -z "$TMUX" ] \
+    && [ -n "$SSH_CONNECTION" ] \
+    && [ -t 0 ]; then
+    ssh-clipboard-daemon 2>/dev/null
+fi
