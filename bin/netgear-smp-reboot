@@ -1,0 +1,274 @@
+#!/usr/bin/env python3
+"""Reboot Netgear Smart Managed Plus switches via their web interface.
+
+Netgear "Smart Managed Plus" (SMP) switches lack proper SNMP write access,
+SSH, or any standard management protocol. The only remote management is a
+web UI with a proprietary MD5-based login scheme. This tool automates the
+login and reboot process.
+
+Supports GS110EMX and GS105PE (and similar models using the same web UI).
+
+Usage:
+    netgear-smp-reboot <host> [-p PASSWORD]
+    netgear-smp-reboot sw-netgear-gs110emx2  # looks up password from network.csv
+
+If no password is given, attempts to look it up from the gdoc2netcfg network.csv.
+"""
+
+import argparse
+import csv
+import hashlib
+import io
+import re
+import socket
+import sys
+import time
+
+import requests
+
+
+def merge(s1: str, s2: str) -> str:
+    """Interleave two strings character by character (Netgear auth scheme)."""
+    result = []
+    i, j = 0, 0
+    while i < len(s1) or j < len(s2):
+        if i < len(s1):
+            result.append(s1[i]); i += 1
+        if j < len(s2):
+            result.append(s2[j]); j += 1
+    return "".join(result)
+
+
+def lookup_password(host: str, csv_path: str) -> str | None:
+    """Look up a switch password from the gdoc2netcfg network.csv."""
+    try:
+        try:
+            ip = socket.gethostbyname(host)
+        except socket.gaierror:
+            ip = host
+
+        with open(csv_path, newline="") as f:
+            for line in f:
+                if line.startswith("Location,") or ",Machine," in line:
+                    break
+            else:
+                return None
+            remaining = line + f.read()
+            reader = csv.DictReader(io.StringIO(remaining))
+            for row in reader:
+                machine = row.get("Machine", "")
+                ipv4 = row.get("IPv4", "").replace("X", "1")
+                password = row.get("Password", "").strip()
+                if not password:
+                    continue
+                if machine and (host == machine or host.startswith(machine + ".")):
+                    return password
+                if ip and ipv4 == ip:
+                    return password
+    except (FileNotFoundError, KeyError):
+        pass
+    return None
+
+
+def _login_hash(password: str, rand: str) -> str:
+    """Compute the Netgear MD5(merge(password, rand)) login hash."""
+    return hashlib.md5(merge(password, rand).encode()).hexdigest()
+
+
+def _extract_rand(html: str) -> str | None:
+    """Extract the rand nonce from a Netgear login page."""
+    m = re.search(r"rand'[^>]*value=['\"]([^'\"]+)['\"]", html)
+    return m.group(1) if m else None
+
+
+def detect_and_login(session: requests.Session, base_url: str, password: str) -> str:
+    """Log in and return the model family ("emx" or "pe")."""
+    r = session.get(f"{base_url}/", timeout=10)
+    rand = _extract_rand(r.text)
+
+    if rand and "login.cgi" not in r.text:
+        # GS110EMX-style: login form at /, POSTs to /redirect.html,
+        # returns a Gambit session token, then redirects to /homepage.html.
+        pwd_hash = _login_hash(password, rand)
+        r = session.post(f"{base_url}/redirect.html", data={"LoginPassword": pwd_hash}, timeout=10)
+        gambit_match = re.search(r'name="Gambit"\s+value="([^"]+)"', r.text)
+        if not gambit_match:
+            raise RuntimeError("Login failed — no Gambit token in redirect response")
+        gambit = gambit_match.group(1)
+        session.post(f"{base_url}/homepage.html", data={"Gambit": gambit}, timeout=10)
+        session.gambit = gambit
+        return "emx"
+
+    # GS105PE-style: root redirects to /login.cgi
+    r = session.get(f"{base_url}/login.cgi", timeout=10)
+    rand = _extract_rand(r.text)
+    if rand:
+        pwd_hash = _login_hash(password, rand)
+        session.post(f"{base_url}/login.cgi", data={"password": pwd_hash}, timeout=10)
+        return "pe"
+
+    raise RuntimeError("Could not find login page — unsupported switch model")
+
+
+def reboot_emx(session: requests.Session, base_url: str) -> None:
+    """Reboot a GS110EMX-style switch.
+
+    The Gambit session token must be passed in the URL query string.
+    The SNMP OID 1.3.6.1.4.1.2076.81.1.9.0 is set to 1 to trigger reboot.
+
+    Uses a raw HTTP/1.0 request instead of requests — the GS110EMX embedded
+    web server doesn't trigger the reboot when Python's HTTP/1.1 libraries
+    (requests, http.client) are used, likely due to keep-alive negotiation or
+    extra headers the simple firmware doesn't handle. A minimal HTTP/1.0 POST
+    with only the essential headers works reliably.
+    """
+    gambit = session.gambit
+    r = session.get(f"{base_url}/reboot.html?Gambit={gambit}", timeout=10)
+    if "reboot" not in r.text.lower():
+        raise RuntimeError("Failed to access reboot page")
+
+    oid_match = re.search(r'name="(1\.3\.6\.1[^"]+)"', r.text)
+    oid_name = oid_match.group(1) if oid_match else "1.3.6.1.4.1.2076.81.1.9.0"
+
+    cookie = session.cookies.get("gambitCookie", gambit)
+    host = base_url.split("//", 1)[1].rstrip("/")
+
+    body = f"Gambit={gambit}&{oid_name}=1&ACTION=Reload"
+    raw = (
+        f"POST /iss/reboot.html?Gambit={gambit} HTTP/1.0\r\n"
+        f"Host: {host}\r\n"
+        f"Content-Type: application/x-www-form-urlencoded\r\n"
+        f"Content-Length: {len(body)}\r\n"
+        f"Cookie: gambitCookie={cookie}\r\n"
+        f"\r\n"
+        f"{body}"
+    )
+
+    try:
+        sock = socket.create_connection((host, 80), timeout=10)
+        sock.sendall(raw.encode())
+        sock.recv(4096)  # wait for server to process and respond
+    except (ConnectionError, TimeoutError, OSError):
+        pass  # switch may drop connection immediately on reboot
+    finally:
+        sock.close()
+
+
+def reboot_pe(session: requests.Session, base_url: str) -> None:
+    """Reboot a GS105PE-style switch.
+
+    POSTs to /device_reboot.cgi with the checkbox and hash CSRF token.
+    """
+    r = session.get(f"{base_url}/device_reboot.cgi", timeout=10)
+    if "reboot" not in r.text.lower():
+        raise RuntimeError("Failed to access reboot page")
+
+    hash_match = re.search(r"name=['\"]hash['\"][^>]*value=['\"]([^'\"]+)['\"]", r.text)
+    hash_val = hash_match.group(1) if hash_match else ""
+
+    try:
+        session.post(
+            f"{base_url}/device_reboot.cgi",
+            data={"CBox": "1", "hash": hash_val},
+            timeout=10,
+        )
+    except (requests.ConnectionError, requests.Timeout):
+        pass  # switch may drop connection immediately on reboot
+
+
+def wait_for_reboot(base_url: str, timeout_secs: int = 300) -> bool:
+    """Wait for a switch to go down and come back up."""
+    print("  Waiting for switch to go down...", end="", flush=True)
+    went_down = False
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        try:
+            requests.get(f"{base_url}/", timeout=2)
+            print(".", end="", flush=True)
+            time.sleep(2)
+        except (requests.ConnectionError, requests.Timeout):
+            went_down = True
+            break
+
+    if not went_down:
+        print(" switch never went down!")
+        return False
+    print(" down")
+
+    print("  Waiting for switch to come back...", end="", flush=True)
+    start = time.monotonic()
+    deadline = start + timeout_secs
+    while time.monotonic() < deadline:
+        try:
+            r = requests.get(f"{base_url}/", timeout=3)
+            if r.status_code == 200:
+                elapsed = time.monotonic() - start
+                print(f" up ({elapsed:.0f}s)")
+                return True
+        except (requests.ConnectionError, requests.Timeout):
+            pass
+        print(".", end="", flush=True)
+        time.sleep(5)
+
+    print(" timed out!")
+    return False
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Reboot a Netgear Smart Managed Plus switch via its web UI"
+    )
+    parser.add_argument("host", help="Switch hostname or IP address")
+    parser.add_argument("-p", "--password", help="Switch web UI password")
+    parser.add_argument(
+        "--password-from-csv",
+        default="/opt/gdoc2netcfg/.cache/network.csv",
+        help="CSV file to look up password (default: %(default)s)",
+    )
+    parser.add_argument("-n", "--dry-run", action="store_true", help="Login only, don't reboot")
+    parser.add_argument(
+        "--timeout", type=int, default=300,
+        help="Seconds to wait for switch to come back (default: 300)",
+    )
+    args = parser.parse_args()
+
+    password = args.password
+    if not password:
+        password = lookup_password(args.host, args.password_from_csv)
+    if not password:
+        print(f"error: no password for {args.host} (use -p or check {args.password_from_csv})", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        ip = socket.gethostbyname(args.host)
+    except socket.gaierror:
+        ip = args.host
+    base_url = f"http://{ip}"
+
+    print(f"Connecting to {args.host} ({ip})...")
+
+    session = requests.Session()
+    try:
+        model = detect_and_login(session, base_url, password)
+    except (requests.ConnectionError, requests.Timeout) as e:
+        print(f"error: cannot connect to {ip}: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Logged in (model family: {model})")
+
+    if args.dry_run:
+        print("Dry run — skipping reboot")
+        return
+
+    print("Sending reboot command...")
+    if model == "emx":
+        reboot_emx(session, base_url)
+    else:
+        reboot_pe(session, base_url)
+
+    if not wait_for_reboot(base_url, args.timeout):
+        sys.exit(2)
+
+
+if __name__ == "__main__":
+    main()
