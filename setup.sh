@@ -294,6 +294,11 @@ linkit vim
 
 pkgs
 
+# Install ssh-clipboard-bridge for kitty+tmux clipboard access over SSH
+if command -v uv &> /dev/null; then
+	uv pip install --system git+https://github.com/mithro/ssh-clipboard-bridge-with-kitty-and-tmux
+fi
+
 ack
 gh
 ssh
