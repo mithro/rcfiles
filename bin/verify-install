@@ -1,0 +1,278 @@
+#!/usr/bin/env python3
+"""Verify that all tools and packages from setup.sh are installed.
+
+Checks apt packages, standalone tools (gh, uv, ack), and prints a
+summary table with install status and version numbers.
+"""
+
+import os
+import subprocess
+import sys
+
+
+def run(cmd, timeout=10):
+    """Run a command and return (returncode, stdout)."""
+    try:
+        r = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return r.returncode, r.stdout.strip()
+    except FileNotFoundError:
+        return 127, ""
+    except subprocess.TimeoutExpired:
+        return 1, "(timeout)"
+
+
+def is_desktop():
+    """Detect if this is a desktop system (has a display manager or X sessions)."""
+    if os.path.isdir("/usr/share/xsessions"):
+        entries = os.listdir("/usr/share/xsessions")
+        if entries:
+            return True
+    if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+        return True
+    return False
+
+
+def get_dpkg_info(package):
+    """Get install status and version from dpkg. Returns (installed, version)."""
+    rc, out = run(["dpkg-query", "-W", "-f", "${Status}\t${Version}", package])
+    if rc != 0:
+        return False, None
+    parts = out.split("\t")
+    if len(parts) == 2:
+        status, version = parts
+        installed = "install ok installed" in status
+        return installed, version if installed else None
+    return False, None
+
+
+def get_command_version(cmd, args, extract=None):
+    """Run a command with version args and optionally extract version string.
+
+    extract: if provided, a function that takes stdout and returns the version.
+    """
+    rc, out = run([cmd] + args)
+    if rc != 0 and not out:
+        return None
+    if extract:
+        return extract(out)
+    return out
+
+
+def main():
+    desktop = is_desktop()
+
+    # APT packages: (package_name, version_cmd or None, desktop_only)
+    apt_packages = [
+        ("ascii", None, False),
+        ("bpython", None, False),
+        (
+            "curl",
+            ["curl", "--version"],
+            lambda o: o.split("\n")[0].split()[1] if o else None,
+            False,
+        ),
+        (
+            "git",
+            ["git", "--version"],
+            lambda o: o.replace("git version ", "") if o else None,
+            False,
+        ),
+        ("gitk", None, True),
+        (
+            "htop",
+            ["htop", "--version"],
+            lambda o: o.split("\n")[0].split()[-1] if o else None,
+            False,
+        ),
+        ("ipython3", ["ipython3", "--version"], None, False),
+        (
+            "jq",
+            ["jq", "--version"],
+            lambda o: o.replace("jq-", "") if o else None,
+            False,
+        ),
+        ("kitty-terminfo", None, False),
+        (
+            "mosh",
+            ["mosh", "--version"],
+            lambda o: o.split()[1] if o and len(o.split()) > 1 else o,
+            False,
+        ),
+        (
+            "shellcheck",
+            ["shellcheck", "--version"],
+            lambda o: (
+                next(
+                    (
+                        line.split(":")[1].strip()
+                        for line in o.split("\n")
+                        if line.startswith("version:")
+                    ),
+                    o,
+                )
+                if o
+                else None
+            ),
+            False,
+        ),
+        (
+            "tmux",
+            ["tmux", "-V"],
+            lambda o: o.replace("tmux ", "") if o else None,
+            False,
+        ),
+        (
+            "zsh",
+            ["zsh", "--version"],
+            lambda o: o.split()[1] if o and len(o.split()) > 1 else o,
+            False,
+        ),
+    ]
+
+    # Standalone tools: (name, which_cmd, version_cmd, version_extract)
+    standalone_tools = [
+        (
+            "ack",
+            "ack",
+            ["ack", "--version"],
+            lambda o: o.split()[1] if o and len(o.split()) > 1 else o,
+        ),
+        (
+            "gh",
+            "gh",
+            ["gh", "--version"],
+            lambda o: (
+                o.split("\n")[0].replace("gh version ", "").split(" (")[0]
+                if o
+                else None
+            ),
+        ),
+        (
+            "uv",
+            "uv",
+            ["uv", "--version"],
+            lambda o: o.replace("uv ", "") if o else None,
+        ),
+    ]
+
+    results = []
+
+    # Check APT packages
+    for entry in apt_packages:
+        if len(entry) == 3:
+            pkg, ver_cmd_unused, desktop_only = entry
+            ver_cmd = None
+            ver_extract = None
+        else:
+            pkg, ver_cmd, ver_extract, desktop_only = entry
+
+        if desktop_only and not desktop:
+            results.append((pkg, "skip", "desktop only", ""))
+            continue
+
+        installed, dpkg_version = get_dpkg_info(pkg)
+        if not installed:
+            results.append((pkg, "MISSING", "", "apt"))
+            continue
+
+        # Try to get runtime version if we have a command for it
+        version = dpkg_version or ""
+        if ver_cmd:
+            runtime_ver = get_command_version(ver_cmd[0], ver_cmd[1:], ver_extract)
+            if runtime_ver:
+                version = runtime_ver
+
+        results.append((pkg, "ok", version, "apt"))
+
+    # Check standalone tools
+    for name, cmd, ver_cmd, ver_extract in standalone_tools:
+        rc, which_out = run(["which", cmd])
+        if rc != 0:
+            results.append((name, "MISSING", "", "standalone"))
+            continue
+
+        version = ""
+        if ver_cmd:
+            runtime_ver = get_command_version(ver_cmd[0], ver_cmd[1:], ver_extract)
+            if runtime_ver:
+                version = runtime_ver
+
+        path = which_out
+        # Shorten home paths for display
+        home = os.path.expanduser("~")
+        if path.startswith(home):
+            path = "~" + path[len(home) :]
+
+        results.append((name, "ok", version, path))
+
+    # Print table
+    name_width = max(len(r[0]) for r in results)
+    status_width = max(len(r[1]) for r in results)
+    version_width = max(len(r[2]) for r in results)
+    source_width = max(len(r[3]) for r in results)
+
+    # Minimum widths
+    name_width = max(name_width, 7)
+    status_width = max(status_width, 6)
+    version_width = max(version_width, 7)
+    source_width = max(source_width, 6)
+
+    header = f"{'Package':<{name_width}}  {'Status':<{status_width}}  {'Version':<{version_width}}  {'Source':<{source_width}}"
+    separator = f"{'-' * name_width}  {'-' * status_width}  {'-' * version_width}  {'-' * source_width}"
+
+    print()
+    print(header)
+    print(separator)
+
+    missing_count = 0
+    for name, status, version, source in results:
+        if status == "MISSING":
+            missing_count += 1
+            marker = "!!"
+        elif status == "skip":
+            marker = "--"
+        else:
+            marker = "ok"
+
+        print(
+            f"{name:<{name_width}}  {marker:<{status_width}}  {version:<{version_width}}  {source:<{source_width}}"
+        )
+
+    print(separator)
+
+    ok_count = sum(1 for r in results if r[1] == "ok")
+    skip_count = sum(1 for r in results if r[1] == "skip")
+    total = len(results)
+
+    summary_parts = [f"{ok_count}/{total} installed"]
+    if skip_count:
+        summary_parts.append(f"{skip_count} skipped")
+    if missing_count:
+        summary_parts.append(f"{missing_count} MISSING")
+
+    print(", ".join(summary_parts))
+
+    if missing_count:
+        missing_apt = [r[0] for r in results if r[1] == "MISSING" and r[3] == "apt"]
+        missing_standalone = [
+            r[0] for r in results if r[1] == "MISSING" and r[3] == "standalone"
+        ]
+        print()
+        if missing_apt:
+            print("Install missing apt packages:")
+            print(f"  sudo apt-get install {' '.join(missing_apt)}")
+        if missing_standalone:
+            print(f"Missing standalone tools: {', '.join(missing_standalone)}")
+            print("  Re-run setup.sh to install them")
+
+    print()
+    return 1 if missing_count else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
