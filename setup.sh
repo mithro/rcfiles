@@ -273,6 +273,28 @@ function uv_install {
 	curl -LsSf https://astral.sh/uv/install.sh | sh
 }
 
+function ssh_agent_mux {
+	# Install ssh-agent-mux binary from GitHub releases
+	if command -v ssh-agent-mux &> /dev/null; then
+		echo "ssh-agent-mux already installed, skipping..."
+		return 0
+	fi
+
+	echo "Installing ssh-agent-mux..."
+	local ARCH=$(dpkg --print-architecture)
+	local VERSION="0.2.0"
+	local URL="https://github.com/overhacked/ssh-agent-mux/releases/download/v${VERSION}/ssh-agent-mux-${VERSION}-linux-${ARCH}.tar.gz"
+	curl -fsSL "$URL" | tar xz -C ~/bin/ ssh-agent-mux
+	chmod 755 ~/bin/ssh-agent-mux
+
+	# Set up config symlink
+	mkdir -p ~/.config/ssh-agent-mux
+	ln -sf "$RCFILES/ssh/ssh-agent-mux.toml" ~/.config/ssh-agent-mux/ssh-agent-mux.toml
+
+	# Create agent socket directory
+	mkdir -p ~/.ssh/agent
+}
+
 function claude {
 	DOT_CLAUDE_DIR=~/github/mithro/dot-claude
 
@@ -315,6 +337,7 @@ pkgs
 ack
 gh
 uv_install
+ssh_agent_mux
 ssh
 claude
 
