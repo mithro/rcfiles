@@ -284,7 +284,8 @@ function ssh_agent_mux {
 	local ARCH=$(dpkg --print-architecture)
 	local VERSION="0.2.0"
 	local URL="https://github.com/overhacked/ssh-agent-mux/releases/download/v${VERSION}/ssh-agent-mux-${VERSION}-linux-${ARCH}.tar.gz"
-	curl -fsSL "$URL" | tar xz -C ~/bin/ ssh-agent-mux
+	local TARDIR="ssh-agent-mux-${VERSION}-linux-${ARCH}"
+	curl -fsSL "$URL" | tar xz --strip-components=1 -C ~/bin/ "${TARDIR}/ssh-agent-mux"
 	chmod 755 ~/bin/ssh-agent-mux
 
 	# Set up config symlink

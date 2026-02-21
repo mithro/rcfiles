@@ -34,10 +34,12 @@ fi
 
 # Start a persistent local ssh-agent with a fixed socket path
 LOCAL_AGENT_SOCK="$HOME/.ssh/agent/local.sock"
+LOCAL_AGENT_PID_FILE="$HOME/.ssh/agent/local.pid"
 if [ ! -S "$LOCAL_AGENT_SOCK" ]; then
 	rm -f "$LOCAL_AGENT_SOCK"
 	mkdir -p "$HOME/.ssh/agent"
-	ssh-agent -a "$LOCAL_AGENT_SOCK" > /dev/null
+	eval "$(ssh-agent -a "$LOCAL_AGENT_SOCK")"
+	echo "$SSH_AGENT_PID" > "$LOCAL_AGENT_PID_FILE"
 fi
 
 # Symlink the forwarded agent socket to a stable path
