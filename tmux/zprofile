@@ -28,6 +28,46 @@ else
 	exec bash -l
 fi
 
+# --- SSH Agent Multiplexing ---
+# Provides a stable SSH_AUTH_SOCK that survives tmux reattach and SSH reconnect.
+# Local keys are always available; forwarded keys appear automatically.
+
+# Start a persistent local ssh-agent with a fixed socket path
+LOCAL_AGENT_SOCK="$HOME/.ssh/agent/local.sock"
+if [ ! -S "$LOCAL_AGENT_SOCK" ]; then
+	rm -f "$LOCAL_AGENT_SOCK"
+	mkdir -p "$HOME/.ssh/agent"
+	ssh-agent -a "$LOCAL_AGENT_SOCK" > /dev/null
+fi
+
+# Symlink the forwarded agent socket to a stable path
+FORWARDED_AGENT_SOCK="$HOME/.ssh/forwarded-agent.sock"
+MUX_SOCK="$HOME/.ssh/agent/mux.sock"
+if [ -n "$SSH_AUTH_SOCK" ] && [ -S "$SSH_AUTH_SOCK" ]; then
+	# Don't symlink to ourselves (the mux or local agent sockets)
+	REAL_AUTH_SOCK="$(readlink -f "$SSH_AUTH_SOCK")"
+	if [ "$REAL_AUTH_SOCK" != "$(readlink -f "$MUX_SOCK")" ] && \
+	   [ "$REAL_AUTH_SOCK" != "$(readlink -f "$LOCAL_AGENT_SOCK")" ]; then
+		ln -sf "$SSH_AUTH_SOCK" "$FORWARDED_AGENT_SOCK"
+	fi
+fi
+
+# Start ssh-agent-mux if not already running
+if command -v ssh-agent-mux > /dev/null; then
+	if [ ! -S "$MUX_SOCK" ]; then
+		rm -f "$MUX_SOCK"
+		ssh-agent-mux &
+		disown
+		# Brief wait for socket to appear
+		for i in 1 2 3 4 5; do
+			[ -S "$MUX_SOCK" ] && break
+			sleep 0.1
+		done
+	fi
+	# Override SSH_AUTH_SOCK to point to the mux
+	export SSH_AUTH_SOCK="$MUX_SOCK"
+fi
+
 # Environment variables to update.
 UPDATE_ENV="DISPLAY SSH_ASKPATH SSH_AUTH_SOCK SSH_AGENT_PID SSH_CONNECTION WINDOWID XAUTHORITY XDG_SESSION_COOKIE DBUS_SESSION_BUS_ADDRESS GNOME_KEYRING_CONTROL GNOME_KEYRING_PID GNOME_KEYRING_SOCKET ORBIT_SOCKETDIR KRB5CCNAME SSH_AGENT_PID SESSION_MANAGER"
 # File to save them too
