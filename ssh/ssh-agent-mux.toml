@@ -1,0 +1,6 @@
+agent_sock_paths = [
+    "~/.ssh/agent/local.sock",
+    "~/.ssh/forwarded-agent.sock",
+]
+listen_path = "~/.ssh/agent/mux.sock"
+log_level = "warn"
