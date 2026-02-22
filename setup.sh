@@ -243,7 +243,7 @@ function ack {
 function gh {
 	# Install GitHub CLI (gh) from official repository
 	# Check if gh is already installed
-	if command -v gh &> /dev/null; then
+	if command -v gh > /dev/null; then
 		echo "gh is already installed, skipping..."
 		return 0
 	fi
