@@ -12,6 +12,11 @@
 LOCAL_AGENT_SOCK="$HOME/.ssh/agent/local.sock"
 REAL_SSH_ADD="/usr/bin/ssh-add"
 
+if [ ! -x "$REAL_SSH_ADD" ]; then
+    echo "Error: $REAL_SSH_ADD not found. Is openssh-client installed?" >&2
+    exit 1
+fi
+
 # If there's no local agent socket or no mux in play, just pass through
 if [ ! -S "$LOCAL_AGENT_SOCK" ]; then
     exec "$REAL_SSH_ADD" "$@"
