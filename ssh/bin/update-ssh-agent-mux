@@ -11,6 +11,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CURRENT_VERSION="0.2.0"
 
 VERSION="${1:-$CURRENT_VERSION}"
+
+# Validate version is semver-like (prevents sed injection and bad URLs)
+if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "Error: VERSION must be in X.Y.Z format, got: $VERSION" >&2
+    exit 1
+fi
+
 BASE_URL="https://github.com/overhacked/ssh-agent-mux/releases/download/v${VERSION}"
 
 ARCHES="amd64 arm64"
