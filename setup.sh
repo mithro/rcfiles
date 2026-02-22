@@ -264,7 +264,7 @@ function gh {
 function uv_install {
 	# Install uv Python package manager from astral.sh
 	# Check if uv is already installed
-	if command -v uv &> /dev/null; then
+	if command -v uv > /dev/null; then
 		echo "uv is already installed, skipping..."
 		return 0
 	fi
