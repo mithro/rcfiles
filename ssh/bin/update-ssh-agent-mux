@@ -1,0 +1,42 @@
+#!/bin/bash
+# Download ssh-agent-mux binaries from GitHub releases and cache them in the repo.
+# Run this manually when upgrading to a new version.
+#
+# Usage: ./update-ssh-agent-mux [VERSION]
+#   VERSION defaults to the currently cached version.
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CURRENT_VERSION="0.2.0"
+
+VERSION="${1:-$CURRENT_VERSION}"
+BASE_URL="https://github.com/overhacked/ssh-agent-mux/releases/download/v${VERSION}"
+
+ARCHES="amd64 arm64"
+
+echo "Downloading ssh-agent-mux v${VERSION}..."
+
+for ARCH in $ARCHES; do
+    TARBALL="ssh-agent-mux-${VERSION}-linux-${ARCH}.tar.gz"
+    URL="${BASE_URL}/${TARBALL}"
+    DEST="${SCRIPT_DIR}/ssh-agent-mux-linux-${ARCH}"
+
+    echo "  ${ARCH}: ${URL}"
+    curl -fsSL "$URL" | tar xz --strip-components=1 -C "$SCRIPT_DIR/" "ssh-agent-mux-${VERSION}-linux-${ARCH}/ssh-agent-mux"
+    mv "$SCRIPT_DIR/ssh-agent-mux" "$DEST"
+    chmod 755 "$DEST"
+    file "$DEST"
+done
+
+echo ""
+echo "Done. Verify and commit:"
+echo "  git add ssh/bin/"
+echo "  git commit -m 'Update ssh-agent-mux to v${VERSION}'"
+
+# Update the version in this script if it changed
+if [ "$VERSION" != "$CURRENT_VERSION" ]; then
+    sed -i "s/^CURRENT_VERSION=\".*\"/CURRENT_VERSION=\"${VERSION}\"/" "$0"
+    echo ""
+    echo "Updated CURRENT_VERSION in this script to ${VERSION}"
+fi
