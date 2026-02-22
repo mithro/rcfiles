@@ -279,9 +279,9 @@ function ssh_agent_mux {
 	local CACHED_BIN="$RCFILES/ssh/bin/ssh-agent-mux-linux-${ARCH}"
 
 	if [ ! -f "$CACHED_BIN" ]; then
-		echo "Error: No cached ssh-agent-mux binary for ${ARCH}"
-		echo "Run: $RCFILES/ssh/bin/update-ssh-agent-mux"
-		return 1
+		echo "Warning: No cached ssh-agent-mux binary for ${ARCH}, skipping"
+		echo "To add support: $RCFILES/ssh/bin/update-ssh-agent-mux"
+		return 0
 	fi
 
 	echo "Installing ssh-agent-mux from repo cache..."
