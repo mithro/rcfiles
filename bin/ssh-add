@@ -17,12 +17,21 @@ if [ ! -S "$LOCAL_AGENT_SOCK" ]; then
     exec "$REAL_SSH_ADD" "$@"
 fi
 
-# Detect read-only operations that work fine through the mux
+# Detect read-only operations that work fine through the mux.
+# -l (list) and -L (list public keys) are read-only.
+# -E (fingerprint hash) modifies output format but is still read-only.
+# Any other flag (add, -d, -D, -x, -X, -t, -K, etc.) is mutating.
 READ_ONLY=0
-if [ $# -eq 1 ]; then
-    case "$1" in
-        -l|-L) READ_ONLY=1 ;;
+HAS_LIST_FLAG=0
+for arg in "$@"; do
+    case "$arg" in
+        -l|-L) HAS_LIST_FLAG=1 ;;
+        -E)    ;;  # output modifier, not mutating
+        -*)    HAS_LIST_FLAG=0; break ;;  # any other flag → not read-only
     esac
+done
+if [ "$HAS_LIST_FLAG" -eq 1 ]; then
+    READ_ONLY=1
 fi
 
 if [ "$READ_ONLY" -eq 1 ]; then
