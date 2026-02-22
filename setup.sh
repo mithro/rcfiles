@@ -274,18 +274,18 @@ function uv_install {
 }
 
 function ssh_agent_mux {
-	# Install ssh-agent-mux binary from GitHub releases
-	if command -v ssh-agent-mux > /dev/null; then
-		echo "ssh-agent-mux already installed, skipping..."
-		return 0
+	# Install ssh-agent-mux from cached binary in repo
+	local ARCH=$(dpkg --print-architecture)
+	local CACHED_BIN="$RCFILES/ssh/bin/ssh-agent-mux-linux-${ARCH}"
+
+	if [ ! -f "$CACHED_BIN" ]; then
+		echo "Error: No cached ssh-agent-mux binary for ${ARCH}"
+		echo "Run: $RCFILES/ssh/bin/update-ssh-agent-mux"
+		return 1
 	fi
 
-	echo "Installing ssh-agent-mux..."
-	local ARCH=$(dpkg --print-architecture)
-	local VERSION="0.2.0"
-	local URL="https://github.com/overhacked/ssh-agent-mux/releases/download/v${VERSION}/ssh-agent-mux-${VERSION}-linux-${ARCH}.tar.gz"
-	local TARDIR="ssh-agent-mux-${VERSION}-linux-${ARCH}"
-	curl -fsSL "$URL" | tar xz --strip-components=1 -C ~/bin/ "${TARDIR}/ssh-agent-mux"
+	echo "Installing ssh-agent-mux from repo cache..."
+	cp "$CACHED_BIN" ~/bin/ssh-agent-mux
 	chmod 755 ~/bin/ssh-agent-mux
 
 	# Set up config symlink
