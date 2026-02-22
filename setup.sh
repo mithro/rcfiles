@@ -145,7 +145,9 @@ function ssh {
 	done
 
 	# Fix key permissions
-	chmod 600 $RCFILES/ssh/keys/* 2>/dev/null || true
+	if ls "$RCFILES"/ssh/keys/* > /dev/null; then
+		chmod 600 "$RCFILES"/ssh/keys/*
+	fi
 
 	# Set up authorized keys if a server
 	if [ $SERVER -eq 1 ]; then
