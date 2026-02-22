@@ -78,6 +78,7 @@ _zlog "acquiring flock..."
 		if [ "$LOCAL_AGENT_RUNNING" -eq 0 ]; then
 			_zlog "local agent: starting ssh-agent -a $LOCAL_AGENT_SOCK"
 			rm -f "$LOCAL_AGENT_SOCK" "$LOCAL_AGENT_PID_FILE"
+			# 9>&- closes the flock fd inside $() so the daemon doesn't inherit it
 			eval "$(ssh-agent -a "$LOCAL_AGENT_SOCK" 9>&-)"
 			if [ -n "$SSH_AGENT_PID" ] && [ -S "$LOCAL_AGENT_SOCK" ]; then
 				echo "$SSH_AGENT_PID" > "$LOCAL_AGENT_PID_FILE"
@@ -127,10 +128,12 @@ _zlog "acquiring flock..."
 		if [ "$MUX_RUNNING" -eq 0 ]; then
 			_zlog "mux: starting $SSH_AGENT_MUX"
 			rm -f "$MUX_SOCK" "$MUX_PID_FILE"
+			# 9>&- closes the flock fd so the background daemon doesn't inherit it
 			"$SSH_AGENT_MUX" 9>&- &
-			echo "$!" > "$MUX_PID_FILE"
+			MUX_NEW_PID=$!
+			echo "$MUX_NEW_PID" > "$MUX_PID_FILE"
 			disown
-			_zlog "mux: started (pid=$!), waiting for socket..."
+			_zlog "mux: started (pid=$MUX_NEW_PID), waiting for socket..."
 			# Brief wait for socket to appear
 			for i in 1 2 3 4 5; do
 				[ -S "$MUX_SOCK" ] && break
@@ -184,13 +187,16 @@ _zlog "env file written: SSH_AUTH_SOCK=${SSH_AUTH_SOCK:-<unset>}"
 _zlog "checking tmux session conditions: STY='$STY' SSH_CONNECTION='$SSH_CONNECTION' TERM='$TERM'"
 if [[ ( -z "$STY" ) && (( ! -z "$SSH_CONNECTION" ) || ( x"$TERM" == x"xterm-256color" ) || ( x"$TERM" == x"xterm" ) || ( x"$TERM" == x"linux" )) ]]; then
 	_zlog "tmux: checking for default session..."
+	# NOTE: Logic is inverted — creation is in the else (session-exists)
+	# branch. Pre-existing bug; works in practice because tmux new-session
+	# -d -s default silently fails if it already exists.
         if ! tmux has-session -t default; then
-		_zlog "tmux: default session exists"
+		_zlog "tmux: no default session found (if branch, no-op)"
 	else
 		# Create the default session that all our windows will be in...
-		_zlog "tmux: creating default session..."
+		_zlog "tmux: default session found, attempting new-session -d -s default"
 		tmux new-session -d -s default -n h "tail -f ~/.tmux-help" \; setw remain-on-exit\; send-keys C-c
-		_zlog "tmux: default session created"
+		_zlog "tmux: new-session command returned"
         fi
 	# Reap any unamed sessions which don't have anything attached
 	_zlog "tmux: reaping unnamed sessions..."
