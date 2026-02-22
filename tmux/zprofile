@@ -35,9 +35,16 @@ fi
 # Start a persistent local ssh-agent with a fixed socket path
 LOCAL_AGENT_SOCK="$HOME/.ssh/agent/local.sock"
 LOCAL_AGENT_PID_FILE="$HOME/.ssh/agent/local.pid"
-if [ ! -S "$LOCAL_AGENT_SOCK" ]; then
-	rm -f "$LOCAL_AGENT_SOCK"
-	mkdir -p "$HOME/.ssh/agent"
+mkdir -p "$HOME/.ssh/agent"
+LOCAL_AGENT_RUNNING=0
+if [ -f "$LOCAL_AGENT_PID_FILE" ]; then
+	LOCAL_PID=$(cat "$LOCAL_AGENT_PID_FILE")
+	if [ -d "/proc/$LOCAL_PID" ] && [ -S "$LOCAL_AGENT_SOCK" ]; then
+		LOCAL_AGENT_RUNNING=1
+	fi
+fi
+if [ "$LOCAL_AGENT_RUNNING" -eq 0 ]; then
+	rm -f "$LOCAL_AGENT_SOCK" "$LOCAL_AGENT_PID_FILE"
 	eval "$(ssh-agent -a "$LOCAL_AGENT_SOCK")"
 	echo "$SSH_AGENT_PID" > "$LOCAL_AGENT_PID_FILE"
 fi
@@ -55,10 +62,19 @@ if [ -n "$SSH_AUTH_SOCK" ] && [ -S "$SSH_AUTH_SOCK" ]; then
 fi
 
 # Start ssh-agent-mux if not already running
+MUX_PID_FILE="$HOME/.ssh/agent/mux.pid"
 if command -v ssh-agent-mux > /dev/null; then
-	if [ ! -S "$MUX_SOCK" ]; then
-		rm -f "$MUX_SOCK"
+	MUX_RUNNING=0
+	if [ -f "$MUX_PID_FILE" ]; then
+		MUX_PID=$(cat "$MUX_PID_FILE")
+		if [ -d "/proc/$MUX_PID" ] && [ -S "$MUX_SOCK" ]; then
+			MUX_RUNNING=1
+		fi
+	fi
+	if [ "$MUX_RUNNING" -eq 0 ]; then
+		rm -f "$MUX_SOCK" "$MUX_PID_FILE"
 		ssh-agent-mux &
+		echo "$!" > "$MUX_PID_FILE"
 		disown
 		# Brief wait for socket to appear
 		for i in 1 2 3 4 5; do
