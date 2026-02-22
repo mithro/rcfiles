@@ -52,17 +52,26 @@ _FORWARDED_SSH_AUTH_SOCK="$SSH_AUTH_SOCK"
 	flock 9
 
 	# -- Local ssh-agent --
-	LOCAL_AGENT_RUNNING=0
-	if [ -f "$LOCAL_AGENT_PID_FILE" ]; then
-		LOCAL_PID=$(cat "$LOCAL_AGENT_PID_FILE")
-		if [ -d "/proc/$LOCAL_PID" ] && [ -S "$LOCAL_AGENT_SOCK" ]; then
-			LOCAL_AGENT_RUNNING=1
+	LOCAL_AGENT_AVAILABLE=0
+	if command -v ssh-agent >/dev/null; then
+		LOCAL_AGENT_RUNNING=0
+		if [ -f "$LOCAL_AGENT_PID_FILE" ]; then
+			LOCAL_PID=$(cat "$LOCAL_AGENT_PID_FILE")
+			if [ -d "/proc/$LOCAL_PID" ] && [ -S "$LOCAL_AGENT_SOCK" ]; then
+				LOCAL_AGENT_RUNNING=1
+				LOCAL_AGENT_AVAILABLE=1
+			fi
 		fi
-	fi
-	if [ "$LOCAL_AGENT_RUNNING" -eq 0 ]; then
-		rm -f "$LOCAL_AGENT_SOCK" "$LOCAL_AGENT_PID_FILE"
-		eval "$(ssh-agent -a "$LOCAL_AGENT_SOCK")"
-		echo "$SSH_AGENT_PID" > "$LOCAL_AGENT_PID_FILE"
+		if [ "$LOCAL_AGENT_RUNNING" -eq 0 ]; then
+			rm -f "$LOCAL_AGENT_SOCK" "$LOCAL_AGENT_PID_FILE"
+			eval "$(ssh-agent -a "$LOCAL_AGENT_SOCK")"
+			if [ -n "$SSH_AGENT_PID" ] && [ -S "$LOCAL_AGENT_SOCK" ]; then
+				echo "$SSH_AGENT_PID" > "$LOCAL_AGENT_PID_FILE"
+				LOCAL_AGENT_AVAILABLE=1
+			else
+				echo "Warning: ssh-agent failed to start" >&2
+			fi
+		fi
 	fi
 
 	# -- Forwarded agent symlink (atomic replace via temp + rename) --
@@ -76,7 +85,10 @@ _FORWARDED_SSH_AUTH_SOCK="$SSH_AUTH_SOCK"
 	fi
 
 	# -- ssh-agent-mux --
-	if command -v ssh-agent-mux > /dev/null; then
+	# Use explicit path: ~/bin may not be in PATH yet during zprofile
+	# (PATH setup happens in ~/.profile which zsh doesn't source)
+	SSH_AGENT_MUX="$HOME/bin/ssh-agent-mux"
+	if [ -x "$SSH_AGENT_MUX" ]; then
 		MUX_RUNNING=0
 		if [ -f "$MUX_PID_FILE" ]; then
 			MUX_PID=$(cat "$MUX_PID_FILE")
@@ -86,7 +98,7 @@ _FORWARDED_SSH_AUTH_SOCK="$SSH_AUTH_SOCK"
 		fi
 		if [ "$MUX_RUNNING" -eq 0 ]; then
 			rm -f "$MUX_SOCK" "$MUX_PID_FILE"
-			ssh-agent-mux &
+			"$SSH_AGENT_MUX" &
 			echo "$!" > "$MUX_PID_FILE"
 			disown
 			# Brief wait for socket to appear
@@ -94,8 +106,19 @@ _FORWARDED_SSH_AUTH_SOCK="$SSH_AUTH_SOCK"
 				[ -S "$MUX_SOCK" ] && break
 				sleep 0.1
 			done
+			if ! [ -S "$MUX_SOCK" ]; then
+				echo "Warning: ssh-agent-mux failed to start" >&2
+				rm -f "$MUX_PID_FILE"
+			fi
 		fi
-		export SSH_AUTH_SOCK="$MUX_SOCK"
+		if [ -S "$MUX_SOCK" ]; then
+			export SSH_AUTH_SOCK="$MUX_SOCK"
+		elif [ "$LOCAL_AGENT_AVAILABLE" -eq 1 ]; then
+			export SSH_AUTH_SOCK="$LOCAL_AGENT_SOCK"
+		fi
+	elif [ "$LOCAL_AGENT_AVAILABLE" -eq 1 ]; then
+		# No mux binary; fall back to local agent
+		export SSH_AUTH_SOCK="$LOCAL_AGENT_SOCK"
 	fi
 
 } 9>"$AGENT_LOCK"
