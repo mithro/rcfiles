@@ -275,7 +275,7 @@ function uv_install {
 
 function ssh_agent_mux {
 	# Install ssh-agent-mux binary from GitHub releases
-	if command -v ssh-agent-mux &> /dev/null; then
+	if command -v ssh-agent-mux > /dev/null; then
 		echo "ssh-agent-mux already installed, skipping..."
 		return 0
 	fi

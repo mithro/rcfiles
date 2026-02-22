@@ -1,7 +1,7 @@
 #!/bin/zsh
 
-# We store the ssh connection multiplexer sockets in this directory.
-mkdir /tmp/ssh
+# SSH ControlMaster sockets go in ~/.ssh/tmp/ (set in ssh/config).
+# The directory is created by setup.sh's ssh() function.
 
 # This setup is designed so that you can "use tmux as your shell" but still
 # preserve support for rsync and scp. Instead we set zsh as our shell and have

@@ -495,8 +495,12 @@ def check_ssh_agent_mux():
             ["ssh-add", "-l"], capture_output=True, text=True,
             timeout=5, env=mux_env)
         rc, out = r.returncode, r.stdout.strip()
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        rc, out = 1, "(error)"
+    except FileNotFoundError:
+        results.append(("mux responsive", "WRONG", "ssh-add not found"))
+        return results
+    except subprocess.TimeoutExpired:
+        results.append(("mux responsive", "WRONG", "agent timed out (unresponsive)"))
+        return results
     if rc in (0, 1):
         # rc=0 means keys listed, rc=1 means "no identities" — both mean agent works
         results.append(("mux responsive", "ok", out or "(no keys loaded)"))
