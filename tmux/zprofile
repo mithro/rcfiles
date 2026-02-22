@@ -184,6 +184,11 @@ for env in `echo $UPDATE_ENV`; do
 done
 _zlog "env file written: SSH_AUTH_SOCK=${SSH_AUTH_SOCK:-<unset>}"
 
+# Clean up per-PID log files older than 30 days
+for _f in "$HOME"/.ssh/agent/zprofile.*.log(N.m+30); do
+	rm -f "$_f"
+done
+
 _zlog "checking tmux session conditions: STY='$STY' SSH_CONNECTION='$SSH_CONNECTION' TERM='$TERM'"
 if [[ ( -z "$STY" ) && (( ! -z "$SSH_CONNECTION" ) || ( x"$TERM" == x"xterm-256color" ) || ( x"$TERM" == x"xterm" ) || ( x"$TERM" == x"linux" )) ]]; then
 	_zlog "tmux: checking for default session..."
@@ -204,12 +209,8 @@ if [[ ( -z "$STY" ) && (( ! -z "$SSH_CONNECTION" ) || ( x"$TERM" == x"xterm-256c
 		_zlog "tmux: killing session $session"
 		tmux kill-session -t $session;
 	done
-	# Clean up per-PID log files older than 30 days
-	for _f in "$HOME"/.ssh/agent/zprofile.*.log(N.m+30); do
-		rm -f "$_f"
-	done
 	# Start a new window.
-	_zlog "tmux: exec new-session -t default + new-window"
+	_zlog "=== zprofile end (exec tmux) ==="
 	exec tmux new-session -t default\; new-window
 else
 	_zlog "tmux: NOT starting (conditions not met)"
