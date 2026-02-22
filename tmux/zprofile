@@ -3,9 +3,9 @@
 # SSH ControlMaster sockets go in ~/.ssh/tmp/ (set in ssh/config).
 # The directory is created by setup.sh's ssh() function.
 
-# Debug logging — writes to ~/.ssh/agent/zprofile.log
-_ZPROFILE_LOG="$HOME/.ssh/agent/zprofile.log"
-_zlog() { echo "$(date '+%Y-%m-%d %H:%M:%S') [$$] $*" >> "$_ZPROFILE_LOG"; }
+# Debug logging — one log file per login, named by zsh PID
+_ZPROFILE_LOG="$HOME/.ssh/agent/zprofile.$$.log"
+_zlog() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$_ZPROFILE_LOG"; }
 _zlog "=== zprofile start ==="
 
 # This setup is designed so that you can "use tmux as your shell" but still
@@ -203,6 +203,10 @@ if [[ ( -z "$STY" ) && (( ! -z "$SSH_CONNECTION" ) || ( x"$TERM" == x"xterm-256c
 	for session in `tmux list-sessions | grep -v attached | grep '^[0-9]*:' | sed -e's/:.*//'`; do
 		_zlog "tmux: killing session $session"
 		tmux kill-session -t $session;
+	done
+	# Clean up per-PID log files older than 30 days
+	for _f in "$HOME"/.ssh/agent/zprofile.*.log(N.m+30); do
+		rm -f "$_f"
 	done
 	# Start a new window.
 	_zlog "tmux: exec new-session -t default + new-window"
