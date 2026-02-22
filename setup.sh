@@ -20,7 +20,11 @@ if [[ "$CURRENT_ORIGIN" =~ ^https://github.com/(.*)$ ]]; then
 fi
 
 # Set Up my RC files.
-SERVER=$(dpkg -l ubuntu-desktop > /dev/null 2>&1; echo $?)
+if dpkg -l ubuntu-desktop > /dev/null; then
+	SERVER=0
+else
+	SERVER=1
+fi
 
 # Detect repository location and ensure ~/rcfiles symlink exists
 # The repository can be at ~/github/mithro/rcfiles with ~/rcfiles as a symlink
