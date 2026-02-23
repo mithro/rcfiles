@@ -62,6 +62,9 @@ _zlog "acquiring flock..."
 	_zlog "flock acquired"
 
 	# -- Local ssh-agent --
+	# Each agent binds to a unique local.<zsh-pid>.sock so that killing an
+	# orphan agent only removes its own socket, not the active one.
+	# local.sock is an atomic symlink to the current agent's socket.
 	_zlog "local agent: checking..."
 	LOCAL_AGENT_AVAILABLE=0
 	if command -v ssh-agent >/dev/null; then
@@ -69,6 +72,7 @@ _zlog "acquiring flock..."
 		if [ -f "$LOCAL_AGENT_PID_FILE" ]; then
 			LOCAL_PID=$(cat "$LOCAL_AGENT_PID_FILE")
 			_zlog "local agent: pid file says $LOCAL_PID, checking /proc/$LOCAL_PID and socket"
+			# -S follows the local.sock symlink to the real socket
 			if [ -d "/proc/$LOCAL_PID" ] && [ -S "$LOCAL_AGENT_SOCK" ]; then
 				LOCAL_AGENT_RUNNING=1
 				LOCAL_AGENT_AVAILABLE=1
@@ -76,14 +80,18 @@ _zlog "acquiring flock..."
 			fi
 		fi
 		if [ "$LOCAL_AGENT_RUNNING" -eq 0 ]; then
-			_zlog "local agent: starting ssh-agent -a $LOCAL_AGENT_SOCK"
-			rm -f "$LOCAL_AGENT_SOCK" "$LOCAL_AGENT_PID_FILE"
+			LOCAL_NEW_SOCK="$HOME/.ssh/agent/local.$$.sock"
+			_zlog "local agent: starting ssh-agent -a $LOCAL_NEW_SOCK"
+			rm -f "$LOCAL_NEW_SOCK" "$LOCAL_AGENT_PID_FILE"
 			# 9>&- closes the flock fd inside $() so the daemon doesn't inherit it
-			eval "$(ssh-agent -a "$LOCAL_AGENT_SOCK" 9>&-)"
-			if [ -n "$SSH_AGENT_PID" ] && [ -S "$LOCAL_AGENT_SOCK" ]; then
+			eval "$(ssh-agent -a "$LOCAL_NEW_SOCK" 9>&-)"
+			if [ -n "$SSH_AGENT_PID" ] && [ -S "$LOCAL_NEW_SOCK" ]; then
 				echo "$SSH_AGENT_PID" > "$LOCAL_AGENT_PID_FILE"
+				# Atomic symlink: local.sock -> local.<pid>.sock
+				ln -s "$LOCAL_NEW_SOCK" "$LOCAL_AGENT_SOCK.tmp.$$"
+				mv -f "$LOCAL_AGENT_SOCK.tmp.$$" "$LOCAL_AGENT_SOCK"
 				LOCAL_AGENT_AVAILABLE=1
-				_zlog "local agent: started (pid=$SSH_AGENT_PID)"
+				_zlog "local agent: started (pid=$SSH_AGENT_PID), socket=$LOCAL_NEW_SOCK"
 			else
 				_zlog "local agent: FAILED to start"
 				echo "Warning: ssh-agent failed to start" >&2
