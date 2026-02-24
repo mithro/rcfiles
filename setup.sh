@@ -275,7 +275,8 @@ function uv_install {
 
 function ssh_agent_mux {
 	# Install ssh-agent-mux from cached binary in repo
-	local ARCH=$(dpkg --print-architecture)
+	local ARCH
+	ARCH=$(dpkg --print-architecture)
 	local CACHED_BIN="$RCFILES/ssh/bin/ssh-agent-mux-linux-${ARCH}"
 
 	if [ ! -f "$CACHED_BIN" ]; then
