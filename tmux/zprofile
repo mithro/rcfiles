@@ -127,10 +127,16 @@ _zlog "acquiring flock..."
 		MUX_RUNNING=0
 		if [ -f "$MUX_PID_FILE" ]; then
 			MUX_PID=$(cat "$MUX_PID_FILE")
-			_zlog "mux: pid file says $MUX_PID, checking /proc/$MUX_PID and socket"
-			if [ -d "/proc/$MUX_PID" ] && [ -S "$MUX_SOCK" ]; then
+			MUX_COMM=""
+			[ -f "/proc/$MUX_PID/comm" ] && MUX_COMM=$(cat "/proc/$MUX_PID/comm")
+			_zlog "mux: pid file says $MUX_PID, comm=$MUX_COMM, checking process and socket"
+			# Verify the process is actually ssh-agent-mux, not a stale
+			# ssh-agent or other process reusing the same PID.
+			if [ "$MUX_COMM" = "ssh-agent-mux" ] && [ -S "$MUX_SOCK" ]; then
 				MUX_RUNNING=1
 				_zlog "mux: already running (pid=$MUX_PID)"
+			elif [ -d "/proc/$MUX_PID" ]; then
+				_zlog "mux: wrong process at pid=$MUX_PID (comm=$MUX_COMM), will restart"
 			fi
 		fi
 		if [ "$MUX_RUNNING" -eq 0 ]; then
