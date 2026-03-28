@@ -13,13 +13,24 @@ each SSH login. They have two reliability issues:
 2. **No automatic restart** — if either process crashes or is killed, nothing restarts it
    until the next SSH login triggers zprofile.
 
-Additionally, there is a path mismatch: `ssh-agent-mux.toml` references
-`~/.ssh/forwarded-agent.sock` but zprofile creates the forwarded symlink at
-`~/.ssh/agent/forwarded.sock`. The mux has never been able to see the forwarded agent.
-
 ## Solution
 
 Replace the ad-hoc process management in zprofile with systemd user services.
+
+Note: `ssh-agent-mux` v0.2.0 has `--install-service` / `--uninstall-service` flags for
+managing its own systemd unit. However, we hand-craft both units because: (a) we also
+need a unit for ssh-agent itself, (b) we need the ssh-agent wrapper script for per-PID
+socket indirection, (c) `--install-service` requires a DBUS session bus which may not be
+available during `setup.sh`, and (d) having both units in the repo makes the setup
+reproducible and auditable.
+
+### Prerequisites
+
+- **Linger must be enabled** (`loginctl enable-linger $USER`) — without it,
+  `default.target` only starts when a user session begins, which defeats the purpose of
+  surviving SSH disconnects.
+- **`systemd-coredump`** should be installed for crash capture. This is a soft dependency:
+  `setup.sh` installs it if available but does not fail if the install is skipped.
 
 ### New Files
 
@@ -33,7 +44,8 @@ Systemd user unit for the local ssh-agent.
   2. Creates `local.<pid>.sock` socket path
   3. Atomically updates `local.sock` symlink to point to it
   4. `exec`s into `/usr/bin/ssh-agent -D -a <per-pid-socket>`
-- **Restart:** `on-failure`, `RestartSec=1`
+- **Restart:** `always`, `RestartSec=1` (use `always` not `on-failure` so the daemon
+  restarts even on clean exit — it should never exit voluntarily)
 - **Install:** `WantedBy=default.target`
 
 #### `ssh/systemd/ssh-agent-mux.service`
@@ -44,7 +56,7 @@ Systemd user unit for ssh-agent-mux.
 - **ExecStart:** `%h/bin/ssh-agent-mux` (reads config from `~/.config/ssh-agent-mux/`)
 - **Dependencies:** `After=ssh-agent.service`, `Wants=ssh-agent.service`
   (soft dependency — mux tolerates missing backends but should start after the agent)
-- **Restart:** `on-failure`, `RestartSec=1`
+- **Restart:** `always`, `RestartSec=1`
 - **Core dumps:** `LimitCORE=infinity` — with `systemd-coredump` installed, crashes are
   captured and browsable via `coredumpctl`
 - **Install:** `WantedBy=default.target`
@@ -71,21 +83,15 @@ exec /usr/bin/ssh-agent -D -a "$SOCK"
 
 #### `ssh/ssh-agent-mux.toml`
 
-Fix the forwarded agent path to match what zprofile actually creates:
-
-```toml
-agent_sock_paths = [
-    "~/.ssh/agent/local.sock",
-    "~/.ssh/agent/forwarded.sock",    # was: ~/.ssh/forwarded-agent.sock
-]
-listen_path = "~/.ssh/agent/mux.sock"
-log_level = "warn"
-```
+No changes needed — the toml already references `~/.ssh/forwarded-agent.sock` which
+matches the `FORWARDED_AGENT_SOCK` variable in zprofile (line 47). The zprofile creates
+this symlink at `~/.ssh/forwarded-agent.sock` pointing to the current SSH forwarding
+socket.
 
 #### `setup.sh`
 
 In the package install section:
-- Add `systemd-coredump` to the package list
+- Add `systemd-coredump` to the package list (soft — don't fail if unavailable)
 
 In the `ssh_agent_mux` function (or a new `ssh_agent_systemd` function):
 - `loginctl enable-linger $USER`
@@ -122,7 +128,7 @@ SSH login
   v
 zprofile
   |-- Capture forwarded agent socket from $SSH_AUTH_SOCK
-  |-- flock -> update ~/.ssh/agent/forwarded.sock symlink -> release flock
+  |-- flock -> update ~/.ssh/forwarded-agent.sock symlink -> release flock
   |-- systemctl --user start ssh-agent ssh-agent-mux  (idempotent)
   |-- Wait for ~/.ssh/agent/mux.sock to exist (should already be there)
   |-- export SSH_AUTH_SOCK=~/.ssh/agent/mux.sock
@@ -138,9 +144,24 @@ zprofile
 - Forwarded agent symlink updated on each SSH login to track the current connection
 - ssh-agent-mux sees forwarded keys appear/disappear as SSH connections come and go
 
+### Migration
+
+On a live system with the old ad-hoc agents already running:
+
+1. `setup.sh` installs and enables the new units, but does not start them yet.
+2. On next SSH login, the new zprofile runs `systemctl --user start` which starts the
+   systemd-managed agents.
+3. The old ad-hoc ssh-agent (started by the previous zprofile) will still be running
+   with its own socket. The new systemd ssh-agent gets a new per-PID socket and updates
+   the `local.sock` symlink, so all new connections use the systemd-managed agent.
+4. The old ad-hoc ssh-agent-mux will have died (as usual on SSH disconnect). The new
+   systemd one takes over `mux.sock`.
+5. The old orphan ssh-agent process can be cleaned up manually (`kill <old-pid>`) or
+   left to be reaped on next reboot.
+
 ### Files Becoming Obsolete
 
 These files in `~/.ssh/agent/` are no longer needed after migration:
 - `local.pid` — systemd tracks the PID
 - `mux.pid` — systemd tracks the PID
-- `zprofile.*.log` — can keep debug logging or remove (separate decision)
+- `zprofile.*.log` — keep debug logging (still useful for forwarded agent symlink updates)
