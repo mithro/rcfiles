@@ -104,8 +104,8 @@ def fetch_remote_known_hosts(host: str, verbose: bool) -> list[str]:
                 '-o', 'ConnectTimeout=10',
                 '-o', 'StrictHostKeyChecking=no',
                 host,
-                # Collect user + system-wide known_hosts; ignore missing files
-                'cat ~/.ssh/known_hosts /etc/ssh/ssh_known_hosts 2>/dev/null; exit 0',
+                # Collect all user + system known_hosts files; setopt NO_NOMATCH for zsh glob safety
+                'setopt NO_NOMATCH 2>/dev/null; cat ~/.ssh/known_hosts* /etc/ssh/ssh_known_hosts* 2>/dev/null; exit 0',
             ],
             capture_output=True,
             text=True,
