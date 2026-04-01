@@ -271,8 +271,11 @@ def main() -> None:
             print(f"  {len(new_cands)} candidates from {cfg}", file=sys.stderr)
         candidates |= new_cands
 
-    # C) Plaintext entries in local known_hosts files
-    for kh in sorted(ssh_dir.glob('known_hosts*')):
+    # C) Plaintext entries in local known_hosts files (user and system-wide)
+    local_candidate_files = list(ssh_dir.glob('known_hosts*'))
+    for system_kh in pathlib.Path('/etc/ssh').glob('ssh_known_hosts*'):
+        local_candidate_files.append(system_kh)
+    for kh in sorted(local_candidate_files):
         if kh.suffix == '.bak':
             continue
         try:
