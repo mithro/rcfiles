@@ -25,7 +25,7 @@
 | File | Lines Affected | Change |
 |------|---------------|--------|
 | `setup.sh` | 212-225 (pkgs), 276-298 (ssh_agent_mux), 342 (call site) | Add systemd-coredump, add systemd setup, rename function |
-| `tmux/zprofile` | 45-187 (agent section) | Replace agent startup with systemctl + forwarded symlink only |
+| `tmux/zprofile` | 38-188 (agent section) | Replace agent startup with systemctl + forwarded symlink only |
 | `ssh/README.md` | Agent section | Update to document systemd services |
 
 ---
@@ -194,11 +194,12 @@ After the existing content of `ssh_agent_mux` (line 297, before the closing `}`)
 	# --- Systemd user services for ssh-agent and ssh-agent-mux ---
 
 	# Enable linger so services survive between login sessions
-	loginctl enable-linger "$USER"
+	# May fail if polkit denies the request; non-fatal since services
+	# still work within active sessions.
+	loginctl enable-linger "$USER" || echo "Warning: loginctl enable-linger failed (may need sudo)" >&2
 
-	# Install ssh-agent wrapper script
-	cp "$RCFILES/ssh/systemd/ssh-agent-start.sh" ~/bin/ssh-agent-start.sh
-	chmod 755 ~/bin/ssh-agent-start.sh
+	# Install ssh-agent wrapper script (symlink so updates come from repo)
+	ln -sf "$RCFILES/ssh/systemd/ssh-agent-start.sh" ~/bin/ssh-agent-start.sh
 
 	# Install ssh-agent service unit (symlink so updates come from repo)
 	mkdir -p ~/.config/systemd/user
@@ -235,13 +236,13 @@ git commit -m "setup.sh: Install systemd user services for ssh-agent infrastruct
 ### Task 6: Update tmux/zprofile — replace agent startup with systemd
 
 **Files:**
-- Modify: `tmux/zprofile:38-187` (entire agent section)
+- Modify: `tmux/zprofile:38-188` (entire agent section)
 
-This is the largest change. Replace lines 38-187 with the new systemd-based approach.
+This is the largest change. Replace lines 38-188 (from `# --- SSH Agent Multiplexing ---` through `_zlog "flock released"` on line 188) with the new systemd-based approach. Lines 190-240 (env file writing, tmux session management) remain unchanged.
 
 - [ ] **Step 1: Replace the agent section**
 
-Replace lines 38-187 (from `# --- SSH Agent Multiplexing ---` through `} 9>"$AGENT_LOCK"` and `_zlog "flock released"`) with:
+Replace lines 38-188 with:
 
 ```zsh
 # --- SSH Agent Multiplexing ---
@@ -282,7 +283,16 @@ _zlog "acquiring flock..."
 			_zlog "forwarded symlink: skipped (points to mux or local agent)"
 		fi
 	else
-		_zlog "forwarded symlink: no valid forwarded socket"
+		# No forwarded agent — point at local agent so ssh-agent-mux
+		# doesn't warn about a missing upstream socket.
+		LOCAL_AGENT_SOCK="$HOME/.ssh/agent/local.sock"
+		if [ -S "$LOCAL_AGENT_SOCK" ]; then
+			ln -s "$LOCAL_AGENT_SOCK" "$FORWARDED_AGENT_SOCK.tmp.$$"
+			mv -f "$FORWARDED_AGENT_SOCK.tmp.$$" "$FORWARDED_AGENT_SOCK"
+			_zlog "forwarded symlink: no forwarded agent, fallback -> $LOCAL_AGENT_SOCK"
+		else
+			_zlog "forwarded symlink: no valid forwarded socket and no local agent"
+		fi
 	fi
 
 	_zlog "releasing flock"
@@ -293,10 +303,11 @@ _zlog "flock released"
 # Idempotent: no-op if already running (normal case with linger).
 # Starts them if this is the first login after boot or after setup.sh.
 _zlog "systemd: starting ssh-agent and ssh-agent-mux services..."
-XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user start \
-	ssh-agent.service ross-williams-ssh-agent-mux.service 2>&1 | while read -r line; do
-	_zlog "systemd: $line"
-done
+if ! XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user start \
+	ssh-agent.service ross-williams-ssh-agent-mux.service; then
+	_zlog "systemd: WARNING - failed to start services"
+	echo "Warning: systemctl --user start failed for ssh-agent services" >&2
+fi
 
 # Wait for mux socket to appear (should be near-instant with linger)
 _zlog "waiting for mux socket..."
@@ -316,7 +327,11 @@ fi
 
 - [ ] **Step 2: Verify the zprofile still has valid structure**
 
-Check that the file starts with `#!/bin/zsh`, has the logging setup, the new agent section, then the env file section (line ~190 onwards), then the tmux session management. The env file writing and tmux sections (original lines 190-240) must remain unchanged.
+Run: `head -1 tmux/zprofile && grep -n 'writing env file\|exec tmux\|flock released\|systemctl' tmux/zprofile`
+
+Expected: Line 1 is `#!/bin/zsh`. `flock released` appears once (in the forwarded symlink section). `systemctl` appears once (service start). `writing env file` and `exec tmux` appear unchanged at their original line numbers (~190 and ~234).
+
+Note: The variables `LOCAL_AGENT_SOCK`, `LOCAL_AGENT_PID_FILE`, `MUX_PID_FILE` are no longer defined. The files `~/.ssh/agent/local.pid` and `~/.ssh/agent/mux.pid` become stale but are harmless.
 
 - [ ] **Step 3: Verify syntax**
 
@@ -388,16 +403,36 @@ git commit -m "ssh/README.md: Document systemd service architecture"
 
 - [ ] **Step 1: Run setup.sh systemd portion**
 
-Since this is a live system, test the systemd setup by running just the relevant function. First kill the old ad-hoc agents:
+Since this is a live system, test the systemd setup manually step-by-step rather than sourcing the function:
 
 ```bash
-# Find and note old ad-hoc agent PIDs
+cd ~/github/mithro/rcfiles
+RCFILES=~/github/mithro/rcfiles
+
+# Note old ad-hoc agent PIDs for later cleanup
 ps aux | grep ssh-agent | grep -v grep
 
-# Run the setup (from repo root)
-cd ~/github/mithro/rcfiles
-# Source just the ssh_agent_mux function and run it:
-bash -c 'source <(sed -n "/^function ssh_agent_mux/,/^}/p" setup.sh) && RCFILES=~/github/mithro/rcfiles && ssh_agent_mux'
+# Install wrapper script (symlink)
+ln -sf "$RCFILES/ssh/systemd/ssh-agent-start.sh" ~/bin/ssh-agent-start.sh
+
+# Install ssh-agent unit (symlink)
+mkdir -p ~/.config/systemd/user
+ln -sf "$RCFILES/ssh/systemd/ssh-agent.service" ~/.config/systemd/user/ssh-agent.service
+
+# Install ssh-agent-mux unit via built-in installer
+XDG_RUNTIME_DIR=/run/user/$(id -u) ~/bin/ssh-agent-mux --install-service
+
+# Install drop-in override (symlink)
+ln -sf "$RCFILES/ssh/systemd/ross-williams-ssh-agent-mux.service.d" \
+    ~/.config/systemd/user/ross-williams-ssh-agent-mux.service.d
+
+# Enable linger
+loginctl enable-linger "$USER" || echo "Warning: enable-linger failed"
+
+# Reload and enable
+XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user daemon-reload
+XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user enable \
+    ssh-agent.service ross-williams-ssh-agent-mux.service
 ```
 
 - [ ] **Step 2: Verify units are installed and enabled**
