@@ -298,6 +298,33 @@ function ssh_agent_mux {
 
 	# Create agent socket directory
 	mkdir -p ~/.ssh/agent
+
+	# --- Systemd user services for ssh-agent and ssh-agent-mux ---
+
+	# Enable linger so services survive between login sessions
+	# May fail if polkit denies the request; non-fatal since services
+	# still work within active sessions.
+	loginctl enable-linger "$USER" || echo "Warning: loginctl enable-linger failed (may need sudo)" >&2
+
+	# Install ssh-agent wrapper script (symlink so updates come from repo)
+	ln -sf "$RCFILES/ssh/systemd/ssh-agent-start.sh" ~/bin/ssh-agent-start.sh
+
+	# Install ssh-agent service unit (symlink so updates come from repo)
+	mkdir -p ~/.config/systemd/user
+	ln -sf "$RCFILES/ssh/systemd/ssh-agent.service" ~/.config/systemd/user/ssh-agent.service
+
+	# Install ssh-agent-mux service via its built-in installer
+	# Requires XDG_RUNTIME_DIR for dbus access
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" ~/bin/ssh-agent-mux --install-service
+
+	# Install drop-in override (symlink directory so updates come from repo)
+	ln -sf "$RCFILES/ssh/systemd/ross-williams-ssh-agent-mux.service.d" \
+		~/.config/systemd/user/ross-williams-ssh-agent-mux.service.d
+
+	# Reload and enable
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user daemon-reload
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable \
+		ssh-agent.service ross-williams-ssh-agent-mux.service
 }
 
 function claude {
