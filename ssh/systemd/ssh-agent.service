@@ -1,0 +1,12 @@
+[Unit]
+Description=SSH Authentication Agent
+Documentation=man:ssh-agent(1)
+
+[Service]
+Type=simple
+ExecStart=%h/bin/ssh-agent-start.sh
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=default.target
