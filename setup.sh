@@ -224,6 +224,9 @@ function pkgs {
 		tmux \
 		zsh
 
+	# Core dump capture for debugging ssh-agent-mux crashes (soft dependency)
+	sudo apt-get -y install systemd-coredump || true
+
 #		iprint \
 
 	if [ $SERVER -ne 1 ]; then
