@@ -315,16 +315,19 @@ function ssh_agent_mux {
 
 	# Install ssh-agent-mux service via its built-in installer
 	# Requires XDG_RUNTIME_DIR for dbus access
-	XDG_RUNTIME_DIR="/run/user/$(id -u)" ~/bin/ssh-agent-mux --install-service
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" ~/bin/ssh-agent-mux --install-service \
+		|| echo "Warning: ssh-agent-mux --install-service failed" >&2
 
 	# Install drop-in override (symlink directory so updates come from repo)
 	ln -sf "$RCFILES/ssh/systemd/ross-williams-ssh-agent-mux.service.d" \
 		~/.config/systemd/user/ross-williams-ssh-agent-mux.service.d
 
 	# Reload and enable
-	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user daemon-reload
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user daemon-reload \
+		|| echo "Warning: systemctl daemon-reload failed" >&2
 	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable \
-		ssh-agent.service ross-williams-ssh-agent-mux.service
+		ssh-agent.service ross-williams-ssh-agent-mux.service \
+		|| echo "Warning: systemctl enable failed" >&2
 }
 
 function claude {
