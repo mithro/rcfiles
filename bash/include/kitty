@@ -1,0 +1,7 @@
+# Use kitty's SSH kitten when running inside kitty.
+# This ensures TERM=xterm-kitty is properly set on remote hosts and
+# copies the xterm-kitty terminfo if missing, enabling 256-color and
+# truecolor support in tmux over SSH.
+if [ -n "$KITTY_PID" ] && command -v kitten >/dev/null 2>&1; then
+    alias ssh='kitten ssh'
+fi
