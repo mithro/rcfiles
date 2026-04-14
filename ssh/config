@@ -99,6 +99,7 @@ Host harken.mithis.com
 
 Host big-storage.welland.mithis.com
 	UserKnownHostsFile ~/.ssh/known_hosts.big-storage
+	LocalForward localhost:5998 localhost:5998
 
 # ======================================================
 # Real hosts
