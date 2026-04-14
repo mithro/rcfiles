@@ -113,9 +113,16 @@ Host *.amazonaws.com
 
 # MITHIS Hosts
 # ------------------------------------------------------
+# Home Assistant hosts don't support clipboard forwarding (HAOS)
+Host ha.welland.mithis.com ha.monarto.mithis.com
+	ClearAllForwardings yes
+
 Host *.mithis.com
 	User tim
 	IdentityFile ~/.ssh/keys/new_misc_key
+	ForwardAgent yes
+	RemoteForward ${HOME}/.ssh/clipboard.sock ${HOME}/.ssh/clipboard-over-ssh.sock
+	StreamLocalBindUnlink yes
 
 Host lex.mithis.com
 	# Forward Munin
