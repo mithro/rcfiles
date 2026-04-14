@@ -1,0 +1,47 @@
+#!/bin/sh
+# ssh-add wrapper for ssh-agent-mux
+#
+# ssh-agent-mux is a read-only multiplexer — it supports listing keys
+# and signing, but not adding/removing/locking. This wrapper detects
+# mutating operations and redirects them to the local agent socket.
+#
+# Read-only flags (-l, -L) pass through to whatever SSH_AUTH_SOCK is
+# set to (usually the mux), so you see keys from all backends.
+# Everything else (add, delete, lock, unlock) goes to the local agent.
+
+LOCAL_AGENT_SOCK="$HOME/.ssh/agent/local.sock"
+REAL_SSH_ADD="/usr/bin/ssh-add"
+
+if [ ! -x "$REAL_SSH_ADD" ]; then
+    echo "Error: $REAL_SSH_ADD not found. Is openssh-client installed?" >&2
+    exit 1
+fi
+
+# If there's no local agent socket or no mux in play, just pass through
+if [ ! -S "$LOCAL_AGENT_SOCK" ]; then
+    exec "$REAL_SSH_ADD" "$@"
+fi
+
+# Detect read-only operations that work fine through the mux.
+# -l (list) and -L (list public keys) are read-only.
+# -E (fingerprint hash) modifies output format but is still read-only.
+# Any other flag (add, -d, -D, -x, -X, -t, -K, etc.) is mutating.
+READ_ONLY=0
+HAS_LIST_FLAG=0
+for arg in "$@"; do
+    case "$arg" in
+        -l|-L) HAS_LIST_FLAG=1 ;;
+        -E)    ;;  # output modifier, not mutating
+        -*)    HAS_LIST_FLAG=0; break ;;  # any other flag → not read-only
+    esac
+done
+if [ "$HAS_LIST_FLAG" -eq 1 ]; then
+    READ_ONLY=1
+fi
+
+if [ "$READ_ONLY" -eq 1 ]; then
+    exec "$REAL_SSH_ADD" "$@"
+fi
+
+# All other operations (add, delete, lock, unlock) go to the local agent
+exec env SSH_AUTH_SOCK="$LOCAL_AGENT_SOCK" "$REAL_SSH_ADD" "$@"

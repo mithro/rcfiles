@@ -76,6 +76,7 @@ The `linkit()` function in `setup.sh:24-60` implements a hostname-aware configur
 - Defines many host-specific configurations for personal servers, GitHub, GitLab, AWS, and TimVideos infrastructure
 - SSH keys stored in `ssh/keys/` (not tracked in main repository)
 - On server installations, authorized_keys are downloaded from `github.com/mithro.keys` with local `ssh/authorized_keys` appended if present
+- **Agent multiplexing**: `ssh-agent-mux` provides a stable `SSH_AUTH_SOCK` (`~/.ssh/agent/mux.sock`) that multiplexes a local ssh-agent with the SSH-forwarded agent, surviving tmux reattach and SSH reconnect. Config in `ssh/ssh-agent-mux.toml`, startup logic in `tmux/zprofile`, ssh-add wrapper in `bin/ssh-add`. See `ssh/README.md` for architecture details.
 
 **Vim Configuration:**
 - Uses Pathogen for plugin management (`vim/bundle/vim-pathogen`)

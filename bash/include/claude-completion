@@ -1,0 +1,202 @@
+# Bash completion for Claude Code CLI
+# Provides tab completion for CLI flags, subcommands, and option values.
+
+# Guard: only load if bash completion is available and claude exists
+if ! type complete >/dev/null 2>&1; then
+    return 0
+fi
+
+_claude_completion() {
+    local cur prev
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    # Top-level subcommands
+    local subcommands="agents auth doctor install mcp plugin setup-token update upgrade"
+
+    # Top-level options (long form)
+    local options="
+        --add-dir
+        --agent
+        --agents
+        --allow-dangerously-skip-permissions
+        --allowedTools --allowed-tools
+        --append-system-prompt
+        --betas
+        --chrome
+        --continue
+        --dangerously-skip-permissions
+        --debug
+        --debug-file
+        --disable-slash-commands
+        --disallowedTools --disallowed-tools
+        --effort
+        --fallback-model
+        --file
+        --fork-session
+        --from-pr
+        --help
+        --ide
+        --include-partial-messages
+        --input-format
+        --json-schema
+        --max-budget-usd
+        --mcp-config
+        --model
+        --no-chrome
+        --no-session-persistence
+        --output-format
+        --permission-mode
+        --plugin-dir
+        --print
+        --replay-user-messages
+        --resume
+        --session-id
+        --setting-sources
+        --settings
+        --strict-mcp-config
+        --system-prompt
+        --tmux
+        --tools
+        --verbose
+        --version
+        --worktree
+    "
+
+    # Short options
+    local short_options="-c -d -h -p -r -v -w"
+
+    # Complete option values based on previous word
+    case "$prev" in
+        --model|--fallback-model)
+            COMPREPLY=( $(compgen -W "sonnet opus haiku claude-sonnet-4-6 claude-opus-4-6 claude-haiku-4-5-20251001" -- "$cur") )
+            return 0
+            ;;
+        --permission-mode)
+            COMPREPLY=( $(compgen -W "acceptEdits bypassPermissions default dontAsk plan" -- "$cur") )
+            return 0
+            ;;
+        --output-format)
+            COMPREPLY=( $(compgen -W "text json stream-json" -- "$cur") )
+            return 0
+            ;;
+        --input-format)
+            COMPREPLY=( $(compgen -W "text stream-json" -- "$cur") )
+            return 0
+            ;;
+        --effort)
+            COMPREPLY=( $(compgen -W "low medium high" -- "$cur") )
+            return 0
+            ;;
+        --debug-file|--settings|--mcp-config|--plugin-dir)
+            # File/directory completion
+            COMPREPLY=( $(compgen -f -- "$cur") )
+            return 0
+            ;;
+        --add-dir)
+            # Directory completion
+            COMPREPLY=( $(compgen -d -- "$cur") )
+            return 0
+            ;;
+        --setting-sources)
+            COMPREPLY=( $(compgen -W "user project local user,project user,project,local project,local" -- "$cur") )
+            return 0
+            ;;
+    esac
+
+    # Detect which subcommand (if any) we're in
+    local subcmd=""
+    local subcmd_idx=0
+    local i
+    for (( i=1; i < COMP_CWORD; i++ )); do
+        case "${COMP_WORDS[i]}" in
+            agents|auth|doctor|install|mcp|plugin|setup-token|update|upgrade)
+                subcmd="${COMP_WORDS[i]}"
+                subcmd_idx=$i
+                break
+                ;;
+        esac
+    done
+
+    # Subcommand-specific completions
+    case "$subcmd" in
+        mcp)
+            local mcp_subcmd=""
+            for (( i=subcmd_idx+1; i < COMP_CWORD; i++ )); do
+                case "${COMP_WORDS[i]}" in
+                    add|add-from-claude-desktop|add-json|get|list|remove|reset-project-choices|serve)
+                        mcp_subcmd="${COMP_WORDS[i]}"
+                        break
+                        ;;
+                esac
+            done
+            if [ -z "$mcp_subcmd" ]; then
+                COMPREPLY=( $(compgen -W "add add-from-claude-desktop add-json get list remove reset-project-choices serve" -- "$cur") )
+            else
+                case "$mcp_subcmd" in
+                    add)
+                        COMPREPLY=( $(compgen -W "--transport -e -s --scope --help" -- "$cur") )
+                        ;;
+                    add-json|add-from-claude-desktop|remove)
+                        COMPREPLY=( $(compgen -W "-s --scope --help" -- "$cur") )
+                        ;;
+                esac
+            fi
+            return 0
+            ;;
+        auth)
+            local auth_subcmd=""
+            for (( i=subcmd_idx+1; i < COMP_CWORD; i++ )); do
+                case "${COMP_WORDS[i]}" in
+                    login|logout|status)
+                        auth_subcmd="${COMP_WORDS[i]}"
+                        break
+                        ;;
+                esac
+            done
+            if [ -z "$auth_subcmd" ]; then
+                COMPREPLY=( $(compgen -W "login logout status" -- "$cur") )
+            fi
+            return 0
+            ;;
+        plugin)
+            local plugin_subcmd=""
+            for (( i=subcmd_idx+1; i < COMP_CWORD; i++ )); do
+                case "${COMP_WORDS[i]}" in
+                    disable|enable|install|list|marketplace|uninstall|remove|update|validate)
+                        plugin_subcmd="${COMP_WORDS[i]}"
+                        break
+                        ;;
+                esac
+            done
+            if [ -z "$plugin_subcmd" ]; then
+                COMPREPLY=( $(compgen -W "disable enable install list marketplace uninstall remove update validate" -- "$cur") )
+            fi
+            return 0
+            ;;
+        install)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--force --help" -- "$cur") )
+            else
+                COMPREPLY=( $(compgen -W "stable latest" -- "$cur") )
+            fi
+            return 0
+            ;;
+        agents|doctor|setup-token|update|upgrade)
+            # These have no further subcommands
+            return 0
+            ;;
+    esac
+
+    # Top-level completion
+    if [[ "$cur" == --* ]]; then
+        COMPREPLY=( $(compgen -W "$options" -- "$cur") )
+    elif [[ "$cur" == -* ]]; then
+        COMPREPLY=( $(compgen -W "$short_options $options" -- "$cur") )
+    else
+        COMPREPLY=( $(compgen -W "$subcommands" -- "$cur") )
+    fi
+}
+
+complete -o default -F _claude_completion claude

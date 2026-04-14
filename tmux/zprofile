@@ -1,7 +1,12 @@
 #!/bin/zsh
 
-# We store the ssh connection multiplexer sockets in this directory.
-mkdir /tmp/ssh
+# SSH ControlMaster sockets go in ~/.ssh/tmp/ (set in ssh/config).
+# The directory is created by setup.sh's ssh() function.
+
+# Debug logging — one log file per login, named by zsh PID
+_ZPROFILE_LOG="$HOME/.ssh/agent/zprofile.$$.log"
+_zlog() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$_ZPROFILE_LOG"; }
+_zlog "=== zprofile start ==="
 
 # This setup is designed so that you can "use tmux as your shell" but still
 # preserve support for rsync and scp. Instead we set zsh as our shell and have
@@ -22,14 +27,163 @@ mkdir /tmp/ssh
 # If I want to keep a session around (because I have a nice tiled setup or
 # something) rename the session from a numeric ID to something human usable.
 
+_zlog "checking tmux..."
 if tmux -V; then
-	echo "tmux found!"
+	_zlog "tmux found"
 else
+	_zlog "tmux not found, exec bash -l"
 	exec bash -l
 fi
 
+# --- SSH Agent Multiplexing ---
+# Provides a stable SSH_AUTH_SOCK that survives tmux reattach and SSH reconnect.
+# Local keys are always available; forwarded keys appear automatically.
+#
+# The entire agent setup is serialized with flock to prevent races when
+# multiple SSH sessions arrive simultaneously (e.g., ssh -A in two terminals).
+
+LOCAL_AGENT_SOCK="$HOME/.ssh/agent/local.sock"
+LOCAL_AGENT_PID_FILE="$HOME/.ssh/agent/local.pid"
+FORWARDED_AGENT_SOCK="$HOME/.ssh/forwarded-agent.sock"
+MUX_SOCK="$HOME/.ssh/agent/mux.sock"
+MUX_PID_FILE="$HOME/.ssh/agent/mux.pid"
+AGENT_LOCK="$HOME/.ssh/agent/.lock"
+
+mkdir -p "$HOME/.ssh/agent"
+
+# Capture the forwarded agent BEFORE taking the lock, since SSH_AUTH_SOCK
+# still points to the ephemeral forwarded socket at this point.
+_FORWARDED_SSH_AUTH_SOCK="$SSH_AUTH_SOCK"
+_zlog "forwarded agent captured: $_FORWARDED_SSH_AUTH_SOCK"
+
+_zlog "acquiring flock..."
+{
+	flock 9
+	_zlog "flock acquired"
+
+	# -- Local ssh-agent --
+	# Each agent binds to a unique local.<zsh-pid>.sock so that killing an
+	# orphan agent only removes its own socket, not the active one.
+	# local.sock is an atomic symlink to the current agent's socket.
+	_zlog "local agent: checking..."
+	LOCAL_AGENT_AVAILABLE=0
+	if command -v ssh-agent >/dev/null; then
+		LOCAL_AGENT_RUNNING=0
+		if [ -f "$LOCAL_AGENT_PID_FILE" ]; then
+			LOCAL_PID=$(cat "$LOCAL_AGENT_PID_FILE")
+			_zlog "local agent: pid file says $LOCAL_PID, checking /proc/$LOCAL_PID and socket"
+			# -S follows the local.sock symlink to the real socket
+			if [ -d "/proc/$LOCAL_PID" ] && [ -S "$LOCAL_AGENT_SOCK" ]; then
+				LOCAL_AGENT_RUNNING=1
+				LOCAL_AGENT_AVAILABLE=1
+				_zlog "local agent: already running (pid=$LOCAL_PID)"
+			fi
+		fi
+		if [ "$LOCAL_AGENT_RUNNING" -eq 0 ]; then
+			LOCAL_NEW_SOCK="$HOME/.ssh/agent/local.$$.sock"
+			_zlog "local agent: starting ssh-agent -a $LOCAL_NEW_SOCK"
+			rm -f "$LOCAL_NEW_SOCK" "$LOCAL_AGENT_PID_FILE"
+			# 9>&- closes the flock fd inside $() so the daemon doesn't inherit it
+			eval "$(ssh-agent -a "$LOCAL_NEW_SOCK" 9>&-)"
+			if [ -n "$SSH_AGENT_PID" ] && [ -S "$LOCAL_NEW_SOCK" ]; then
+				echo "$SSH_AGENT_PID" > "$LOCAL_AGENT_PID_FILE"
+				# Atomic symlink: local.sock -> local.<pid>.sock
+				ln -s "$LOCAL_NEW_SOCK" "$LOCAL_AGENT_SOCK.tmp.$$"
+				mv -f "$LOCAL_AGENT_SOCK.tmp.$$" "$LOCAL_AGENT_SOCK"
+				LOCAL_AGENT_AVAILABLE=1
+				_zlog "local agent: started (pid=$SSH_AGENT_PID), socket=$LOCAL_NEW_SOCK"
+			else
+				_zlog "local agent: FAILED to start"
+				echo "Warning: ssh-agent failed to start" >&2
+			fi
+		fi
+	else
+		_zlog "local agent: ssh-agent not found in PATH"
+	fi
+
+	# -- Forwarded agent symlink (atomic replace via temp + rename) --
+	_zlog "forwarded symlink: checking _FORWARDED_SSH_AUTH_SOCK=$_FORWARDED_SSH_AUTH_SOCK"
+	if [ -n "$_FORWARDED_SSH_AUTH_SOCK" ] && [ -S "$_FORWARDED_SSH_AUTH_SOCK" ]; then
+		REAL_AUTH_SOCK="$(readlink -f "$_FORWARDED_SSH_AUTH_SOCK")"
+		_zlog "forwarded symlink: real path=$REAL_AUTH_SOCK"
+		if [ "$REAL_AUTH_SOCK" != "$(readlink -f "$MUX_SOCK")" ] && \
+		   [ "$REAL_AUTH_SOCK" != "$(readlink -f "$LOCAL_AGENT_SOCK")" ]; then
+			ln -s "$_FORWARDED_SSH_AUTH_SOCK" "$FORWARDED_AGENT_SOCK.tmp.$$"
+			mv -f "$FORWARDED_AGENT_SOCK.tmp.$$" "$FORWARDED_AGENT_SOCK"
+			_zlog "forwarded symlink: updated -> $_FORWARDED_SSH_AUTH_SOCK"
+		else
+			_zlog "forwarded symlink: skipped (points to mux or local agent)"
+		fi
+	else
+		_zlog "forwarded symlink: no valid forwarded socket"
+	fi
+
+	# -- ssh-agent-mux --
+	# Use explicit path: ~/bin may not be in PATH yet during zprofile
+	# (PATH setup happens in ~/.profile which zsh doesn't source)
+	SSH_AGENT_MUX="$HOME/bin/ssh-agent-mux"
+	_zlog "mux: checking $SSH_AGENT_MUX"
+	if [ -x "$SSH_AGENT_MUX" ]; then
+		MUX_RUNNING=0
+		if [ -f "$MUX_PID_FILE" ]; then
+			MUX_PID=$(cat "$MUX_PID_FILE")
+			MUX_COMM=""
+			[ -f "/proc/$MUX_PID/comm" ] && MUX_COMM=$(cat "/proc/$MUX_PID/comm")
+			_zlog "mux: pid file says $MUX_PID, comm=$MUX_COMM, checking process and socket"
+			# Verify the process is actually ssh-agent-mux, not a stale
+			# ssh-agent or other process reusing the same PID.
+			if [ "$MUX_COMM" = "ssh-agent-mux" ] && [ -S "$MUX_SOCK" ]; then
+				MUX_RUNNING=1
+				_zlog "mux: already running (pid=$MUX_PID)"
+			elif [ -d "/proc/$MUX_PID" ]; then
+				_zlog "mux: wrong process at pid=$MUX_PID (comm=$MUX_COMM), will restart"
+			fi
+		fi
+		if [ "$MUX_RUNNING" -eq 0 ]; then
+			_zlog "mux: starting $SSH_AGENT_MUX"
+			rm -f "$MUX_SOCK" "$MUX_PID_FILE"
+			# 9>&- closes the flock fd so the background daemon doesn't inherit it
+			"$SSH_AGENT_MUX" 9>&- &
+			MUX_NEW_PID=$!
+			echo "$MUX_NEW_PID" > "$MUX_PID_FILE"
+			disown
+			_zlog "mux: started (pid=$MUX_NEW_PID), waiting for socket..."
+			# Brief wait for socket to appear
+			for i in 1 2 3 4 5; do
+				[ -S "$MUX_SOCK" ] && break
+				sleep 0.1
+			done
+			if ! [ -S "$MUX_SOCK" ]; then
+				_zlog "mux: FAILED to start (socket not found after 0.5s)"
+				echo "Warning: ssh-agent-mux failed to start" >&2
+				rm -f "$MUX_PID_FILE"
+			else
+				_zlog "mux: socket appeared"
+			fi
+		fi
+		if [ -S "$MUX_SOCK" ]; then
+			export SSH_AUTH_SOCK="$MUX_SOCK"
+			unset SSH_AGENT_PID
+			_zlog "mux: SSH_AUTH_SOCK=$MUX_SOCK"
+		elif [ "$LOCAL_AGENT_AVAILABLE" -eq 1 ]; then
+			export SSH_AUTH_SOCK="$LOCAL_AGENT_SOCK"
+			_zlog "mux: falling back to local agent"
+		fi
+	elif [ "$LOCAL_AGENT_AVAILABLE" -eq 1 ]; then
+		# No mux binary; fall back to local agent
+		export SSH_AUTH_SOCK="$LOCAL_AGENT_SOCK"
+		_zlog "mux: binary not found, falling back to local agent"
+	else
+		_zlog "mux: binary not found and no local agent"
+	fi
+
+	_zlog "releasing flock"
+} 9>"$AGENT_LOCK"
+_zlog "flock released"
+
+_zlog "writing env file..."
 # Environment variables to update.
-UPDATE_ENV="DISPLAY SSH_ASKPATH SSH_AUTH_SOCK SSH_AGENT_PID SSH_CONNECTION WINDOWID XAUTHORITY XDG_SESSION_COOKIE DBUS_SESSION_BUS_ADDRESS GNOME_KEYRING_CONTROL GNOME_KEYRING_PID GNOME_KEYRING_SOCKET ORBIT_SOCKETDIR KRB5CCNAME SSH_AGENT_PID SESSION_MANAGER"
+UPDATE_ENV="DISPLAY SSH_ASKPATH SSH_AUTH_SOCK SSH_AGENT_PID SSH_CONNECTION WINDOWID XAUTHORITY XDG_SESSION_COOKIE DBUS_SESSION_BUS_ADDRESS GNOME_KEYRING_CONTROL GNOME_KEYRING_PID GNOME_KEYRING_SOCKET ORBIT_SOCKETDIR KRB5CCNAME SESSION_MANAGER"
 # File to save them too
 ENVFILE="$HOME/.update-env"
 
@@ -42,20 +196,39 @@ for env in `echo $UPDATE_ENV`; do
 		echo "export $env=\"${(P)env}\"" >> $ENVFILE
 	fi
 done
+_zlog "env file written: SSH_AUTH_SOCK=${SSH_AUTH_SOCK:-<unset>}"
 
+# Clean up per-PID log files older than 30 days
+for _f in "$HOME"/.ssh/agent/zprofile.*.log(N.m+30); do
+	rm -f "$_f"
+done
+
+_zlog "checking tmux session conditions: STY='$STY' SSH_CONNECTION='$SSH_CONNECTION' TERM='$TERM'"
 if [[ ( -z "$STY" ) && (( ! -z "$SSH_CONNECTION" ) || ( x"$TERM" == x"xterm-256color" ) || ( x"$TERM" == x"xterm" ) || ( x"$TERM" == x"linux" )) ]]; then
+	_zlog "tmux: checking for default session..."
+	# NOTE: Logic is inverted — creation is in the else (session-exists)
+	# branch. Pre-existing bug; works in practice because tmux new-session
+	# -d -s default silently fails if it already exists.
         if ! tmux has-session -t default; then
+		_zlog "tmux: no default session found (if branch, no-op)"
 	else
 		# Create the default session that all our windows will be in...
+		_zlog "tmux: default session found, attempting new-session -d -s default"
 		tmux new-session -d -s default -n h "tail -f ~/.tmux-help" \; setw remain-on-exit\; send-keys C-c
+		_zlog "tmux: new-session command returned"
         fi
 	# Reap any unamed sessions which don't have anything attached
+	_zlog "tmux: reaping unnamed sessions..."
 	for session in `tmux list-sessions | grep -v attached | grep '^[0-9]*:' | sed -e's/:.*//'`; do
+		_zlog "tmux: killing session $session"
 		tmux kill-session -t $session;
 	done
 	# Start a new window.
+	_zlog "=== zprofile end (exec tmux) ==="
 	exec tmux new-session -t default\; new-window
 else
+	_zlog "tmux: NOT starting (conditions not met)"
         echo "Not starting tmux!"
 	echo "STY='$STY' SSH_CONNECTION='$SSH_CONNECTION' TERM='$TERM'"
 fi
+_zlog "=== zprofile end ==="

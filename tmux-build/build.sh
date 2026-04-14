@@ -100,10 +100,10 @@ echo ""
 echo "==> Phase 8: Build complete!"
 echo ""
 echo "Built packages:"
-ls -1 "$BUILD_DIR"/tmux_*.deb "$BUILD_DIR"/tmux-dbgsym_*.deb 2>/dev/null || true
+ls -1 "$BUILD_DIR"/tmux_*.deb "$BUILD_DIR"/tmux-dbgsym_*.deb || true
 echo ""
 
-DEB_FILE="$(ls -1 "$BUILD_DIR"/tmux_*.deb 2>/dev/null | head -1)"
+DEB_FILE="$(ls -1 "$BUILD_DIR"/tmux_*.deb | head -1)"
 if [[ -z "$DEB_FILE" ]]; then
     echo "ERROR: No .deb file found!" >&2
     exit 1

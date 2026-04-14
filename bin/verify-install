@@ -1,0 +1,710 @@
+#!/usr/bin/env python3
+"""Verify that everything setup.sh deploys is correctly installed.
+
+Checks apt packages, standalone tools, config symlinks (linkit directories),
+bin/ symlinks, SSH setup, Claude setup, and miscellaneous deployment state.
+"""
+
+import os
+import socket
+import subprocess
+import sys
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def run(cmd, timeout=10):
+    """Run a command and return (returncode, stdout)."""
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return r.returncode, r.stdout.strip()
+    except FileNotFoundError:
+        return 127, ""
+    except subprocess.TimeoutExpired:
+        return 1, "(timeout)"
+
+
+def shorten_home(path):
+    """Replace $HOME prefix with ~ for display."""
+    home = os.path.expanduser("~")
+    if path.startswith(home):
+        return "~" + path[len(home):]
+    return path
+
+
+def print_table(title, columns, rows):
+    """Print a titled section table.
+
+    columns: list of column header strings
+    rows:    list of tuples (one per column); second element is the status
+    Returns (ok_count, problem_count) for the section.
+    """
+    if not rows:
+        print(f"\n{title}")
+        print("  (nothing to check)")
+        return 0, 0
+
+    widths = []
+    for i, col in enumerate(columns):
+        widths.append(max(len(col), max(len(str(r[i])) for r in rows)))
+
+    header = "  ".join(f"{col:<{widths[i]}}" for i, col in enumerate(columns))
+    separator = "  ".join("-" * w for w in widths)
+
+    print(f"\n{title}")
+    print(header)
+    print(separator)
+
+    ok_count = 0
+    problem_count = 0
+    for row in rows:
+        status = row[1]
+        if status == "ok":
+            ok_count += 1
+        elif status == "skip":
+            pass
+        else:
+            problem_count += 1
+        print("  ".join(f"{str(row[i]):<{widths[i]}}" for i in range(len(columns))))
+
+    print(separator)
+    total = ok_count + problem_count
+    skip_count = len(rows) - total
+    parts = [f"{ok_count}/{total} ok"]
+    if skip_count:
+        parts.append(f"{skip_count} skipped")
+    if problem_count:
+        parts.append(f"{problem_count} PROBLEMS")
+    print(", ".join(parts))
+
+    return ok_count, problem_count
+
+
+# ---------------------------------------------------------------------------
+# Path / hostname detection (mirrors setup.sh logic)
+# ---------------------------------------------------------------------------
+
+def get_rcfiles_path():
+    """Return the resolved rcfiles repository path."""
+    # The script lives in $RCFILES/bin/
+    script_dir = os.path.dirname(os.path.realpath(__file__))
+    return os.path.dirname(script_dir)
+
+
+def get_hostname_parts():
+    """Return (HOSTNAME, DOMAIN, BASE_DOMAIN) matching setup.sh logic.
+
+    setup.sh uses:
+      HOSTNAME=$(hostname -f)
+      DOMAIN=$(hostname -d)
+      BASE_DOMAIN=$(hostname -f | sed -e's/.*\\.(.*\\..*)/\\1/')
+    """
+    fqdn = socket.getfqdn()
+
+    # hostname -d equivalent: everything after the first dot
+    parts = fqdn.split(".", 1)
+    domain = parts[1] if len(parts) > 1 else ""
+
+    # BASE_DOMAIN: last two components (e.g. mithis.com from foo.mithis.com)
+    dot_parts = fqdn.split(".")
+    if len(dot_parts) >= 2:
+        base_domain = ".".join(dot_parts[-2:])
+    else:
+        base_domain = fqdn
+
+    return fqdn, domain, base_domain
+
+
+RCFILES = get_rcfiles_path()
+HOSTNAME, DOMAIN, BASE_DOMAIN = get_hostname_parts()
+HOME = os.path.expanduser("~")
+
+
+# ---------------------------------------------------------------------------
+# Check: packages (existing logic)
+# ---------------------------------------------------------------------------
+
+def is_desktop():
+    """Detect if this is a desktop system."""
+    if os.path.isdir("/usr/share/xsessions"):
+        entries = os.listdir("/usr/share/xsessions")
+        if entries:
+            return True
+    if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+        return True
+    return False
+
+
+def get_dpkg_info(package):
+    """Get install status and version from dpkg."""
+    rc, out = run(["dpkg-query", "-W", "-f", "${Status}\t${Version}", package])
+    if rc != 0:
+        return False, None
+    parts = out.split("\t")
+    if len(parts) == 2:
+        status, version = parts
+        installed = "install ok installed" in status
+        return installed, version if installed else None
+    return False, None
+
+
+def get_command_version(cmd, args, extract=None):
+    """Run a command with version args and optionally extract version string."""
+    rc, out = run([cmd] + args)
+    if rc != 0 and not out:
+        return None
+    if extract:
+        return extract(out)
+    return out
+
+
+def check_packages():
+    """Check apt packages and standalone tools. Returns list of result rows."""
+    desktop = is_desktop()
+
+    # APT packages: (package_name, version_cmd, version_extract, desktop_only)
+    apt_packages = [
+        ("ascii", None, None, False),
+        ("bpython", None, None, False),
+        ("curl", ["curl", "--version"],
+         lambda o: o.split("\n")[0].split()[1] if o else None, False),
+        ("git", ["git", "--version"],
+         lambda o: o.replace("git version ", "") if o else None, False),
+        ("gitk", None, None, True),
+        ("htop", ["htop", "--version"],
+         lambda o: o.split("\n")[0].split()[-1] if o else None, False),
+        ("ipython3", ["ipython3", "--version"], None, False),
+        ("jq", ["jq", "--version"],
+         lambda o: o.replace("jq-", "") if o else None, False),
+        ("kitty-terminfo", None, None, False),
+        ("mosh", ["mosh", "--version"],
+         lambda o: o.split()[1] if o and len(o.split()) > 1 else o, False),
+        ("shellcheck", ["shellcheck", "--version"],
+         lambda o: (next(
+             (line.split(":")[1].strip()
+              for line in o.split("\n") if line.startswith("version:")), o)
+             if o else None), False),
+        ("tmux", ["tmux", "-V"],
+         lambda o: o.replace("tmux ", "") if o else None, False),
+        ("zsh", ["zsh", "--version"],
+         lambda o: o.split()[1] if o and len(o.split()) > 1 else o, False),
+    ]
+
+    standalone_tools = [
+        ("ack", "ack", ["ack", "--version"],
+         lambda o: o.split()[1] if o and len(o.split()) > 1 else o),
+        ("gh", "gh", ["gh", "--version"],
+         lambda o: (o.split("\n")[0].replace("gh version ", "").split(" (")[0]
+                    if o else None)),
+        ("uv", "uv", ["uv", "--version"],
+         lambda o: o.replace("uv ", "") if o else None),
+        ("ssh-agent-mux", "ssh-agent-mux", ["ssh-agent-mux", "--version"],
+         lambda o: o.split()[-1] if o else None),
+    ]
+
+    results = []
+
+    for pkg, ver_cmd, ver_extract, desktop_only in apt_packages:
+        if desktop_only and not desktop:
+            results.append((pkg, "skip", "desktop only", ""))
+            continue
+
+        installed, dpkg_version = get_dpkg_info(pkg)
+        if not installed:
+            results.append((pkg, "MISSING", "", "apt"))
+            continue
+
+        version = dpkg_version or ""
+        if ver_cmd:
+            runtime_ver = get_command_version(
+                ver_cmd[0], ver_cmd[1:], ver_extract)
+            if runtime_ver:
+                version = runtime_ver
+        results.append((pkg, "ok", version, "apt"))
+
+    for name, cmd, ver_cmd, ver_extract in standalone_tools:
+        rc, which_out = run(["which", cmd])
+        if rc != 0:
+            results.append((name, "MISSING", "", "standalone"))
+            continue
+
+        version = ""
+        if ver_cmd:
+            runtime_ver = get_command_version(
+                ver_cmd[0], ver_cmd[1:], ver_extract)
+            if runtime_ver:
+                version = runtime_ver
+
+        path = shorten_home(which_out)
+        results.append((name, "ok", version, path))
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Check: config symlinks (linkit directories)
+# ---------------------------------------------------------------------------
+
+def check_config_symlinks():
+    """Check config files deployed by linkit().
+
+    For each base file (no hyphens) in each linkit directory:
+    - If hostname overrides exist: ~/.$FILENAME should be a regular file
+    - Otherwise: ~/.$FILENAME should be a symlink to $RCFILES/dir/filename
+    """
+    linkit_dirs = ["ack", "bash", "git", "other", "package", "tmux", "vim"]
+    results = []
+
+    for d in linkit_dirs:
+        dir_path = os.path.join(RCFILES, d)
+        if not os.path.isdir(dir_path):
+            results.append((f"{d}/", "MISSING", "directory not found"))
+            continue
+
+        for entry in sorted(os.listdir(dir_path)):
+            fp = os.path.join(dir_path, entry)
+            if not os.path.isfile(fp):
+                continue
+            # Skip dotfiles (bash glob * doesn't match them)
+            if entry.startswith("."):
+                continue
+            # Skip files with hyphens (override fragments)
+            if "-" in entry:
+                continue
+
+            dot_file = os.path.join(HOME, f".{entry}")
+            source_path = fp
+
+            # Check if any hostname overrides exist
+            has_override = False
+            for suffix in [BASE_DOMAIN, DOMAIN, HOSTNAME]:
+                if suffix and os.path.isfile(f"{fp}-{suffix}"):
+                    has_override = True
+                    break
+
+            if has_override:
+                # Should be a regular file (generated by concatenation)
+                if not os.path.exists(dot_file):
+                    results.append(
+                        (f"{d}/{entry}", "MISSING",
+                         f"~/.{entry} (should be generated)"))
+                elif os.path.islink(dot_file):
+                    results.append(
+                        (f"{d}/{entry}", "WRONG",
+                         f"~/.{entry} is symlink, should be generated file"))
+                elif os.path.isfile(dot_file):
+                    results.append(
+                        (f"{d}/{entry}", "ok",
+                         f"~/.{entry} (generated)"))
+                else:
+                    results.append(
+                        (f"{d}/{entry}", "WRONG",
+                         f"~/.{entry} unexpected type"))
+            else:
+                # Should be a symlink to the source file
+                if not os.path.exists(dot_file) and not os.path.islink(dot_file):
+                    results.append(
+                        (f"{d}/{entry}", "MISSING",
+                         f"~/.{entry}"))
+                elif os.path.islink(dot_file):
+                    target = os.path.realpath(dot_file)
+                    expected = os.path.realpath(source_path)
+                    if target == expected:
+                        results.append(
+                            (f"{d}/{entry}", "ok",
+                             f"~/.{entry} -> {shorten_home(source_path)}"))
+                    else:
+                        results.append(
+                            (f"{d}/{entry}", "WRONG",
+                             f"~/.{entry} -> {shorten_home(target)} "
+                             f"(expected {shorten_home(source_path)})"))
+                else:
+                    results.append(
+                        (f"{d}/{entry}", "WRONG",
+                         f"~/.{entry} is regular file, should be symlink"))
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Check: bin/ symlinks
+# ---------------------------------------------------------------------------
+
+def check_bin_symlinks():
+    """Check that each file in $RCFILES/bin/ is symlinked into ~/bin/."""
+    results = []
+    bin_src = os.path.join(RCFILES, "bin")
+    bin_dst = os.path.join(HOME, "bin")
+
+    if not os.path.isdir(bin_src):
+        return [("bin/", "MISSING", "source directory not found")]
+
+    for entry in sorted(os.listdir(bin_src)):
+        src = os.path.join(bin_src, entry)
+        if not os.path.isfile(src):
+            continue
+
+        dst = os.path.join(bin_dst, entry)
+
+        if not os.path.exists(dst) and not os.path.islink(dst):
+            results.append((entry, "MISSING", f"~/bin/{entry}"))
+        elif os.path.islink(dst):
+            target = os.path.realpath(dst)
+            expected = os.path.realpath(src)
+            if target == expected:
+                results.append((entry, "ok", f"-> {shorten_home(src)}"))
+            else:
+                results.append(
+                    (entry, "WRONG",
+                     f"-> {shorten_home(target)} "
+                     f"(expected {shorten_home(src)})"))
+        else:
+            results.append(
+                (entry, "WRONG",
+                 f"~/bin/{entry} exists but is not a symlink"))
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Check: SSH setup
+# ---------------------------------------------------------------------------
+
+def check_ssh():
+    """Check SSH directories and config symlinks."""
+    results = []
+
+    # ~/.ssh/ directory
+    ssh_dir = os.path.join(HOME, ".ssh")
+    if os.path.isdir(ssh_dir):
+        results.append(("~/.ssh/", "ok", "directory exists"))
+    else:
+        results.append(("~/.ssh/", "MISSING", "directory not found"))
+
+    # ~/.ssh/tmp/ directory
+    ssh_tmp = os.path.join(HOME, ".ssh", "tmp")
+    if os.path.isdir(ssh_tmp):
+        results.append(("~/.ssh/tmp/", "ok", "directory exists"))
+    else:
+        results.append(("~/.ssh/tmp/", "MISSING", "directory not found"))
+
+    # ~/.ssh/config -> $RCFILES/ssh/config
+    ssh_config = os.path.join(HOME, ".ssh", "config")
+    expected_config = os.path.join(RCFILES, "ssh", "config")
+    if os.path.islink(ssh_config):
+        target = os.path.realpath(ssh_config)
+        if target == os.path.realpath(expected_config):
+            results.append(
+                ("~/.ssh/config", "ok",
+                 f"-> {shorten_home(expected_config)}"))
+        else:
+            results.append(
+                ("~/.ssh/config", "WRONG",
+                 f"-> {shorten_home(target)} "
+                 f"(expected {shorten_home(expected_config)})"))
+    elif os.path.exists(ssh_config):
+        results.append(
+            ("~/.ssh/config", "WRONG", "exists but is not a symlink"))
+    else:
+        results.append(("~/.ssh/config", "MISSING", ""))
+
+    # ~/.ssh/keys -> $RCFILES/ssh/keys (or a directory with key files)
+    ssh_keys = os.path.join(HOME, ".ssh", "keys")
+    expected_keys = os.path.join(RCFILES, "ssh", "keys")
+    if os.path.islink(ssh_keys):
+        target = os.path.realpath(ssh_keys)
+        if target == os.path.realpath(expected_keys):
+            results.append(
+                ("~/.ssh/keys", "ok",
+                 f"-> {shorten_home(expected_keys)}"))
+        else:
+            results.append(
+                ("~/.ssh/keys", "WRONG",
+                 f"-> {shorten_home(target)} "
+                 f"(expected {shorten_home(expected_keys)})"))
+    elif os.path.isdir(ssh_keys):
+        results.append(
+            ("~/.ssh/keys", "ok", "directory (not symlinked)"))
+    elif os.path.exists(ssh_keys):
+        results.append(
+            ("~/.ssh/keys", "WRONG", "exists but unexpected type"))
+    else:
+        results.append(("~/.ssh/keys", "MISSING", ""))
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Check: ssh-agent-mux setup
+# ---------------------------------------------------------------------------
+
+def check_ssh_agent_mux():
+    """Check ssh-agent-mux config, sockets, and responsiveness."""
+    results = []
+
+    # Config symlink: ~/.config/ssh-agent-mux/ssh-agent-mux.toml
+    config_link = os.path.join(
+        HOME, ".config", "ssh-agent-mux", "ssh-agent-mux.toml")
+    expected_config = os.path.join(RCFILES, "ssh", "ssh-agent-mux.toml")
+    if os.path.islink(config_link):
+        target = os.path.realpath(config_link)
+        if target == os.path.realpath(expected_config):
+            results.append(
+                ("config symlink", "ok",
+                 f"-> {shorten_home(expected_config)}"))
+        else:
+            results.append(
+                ("config symlink", "WRONG",
+                 f"-> {shorten_home(target)} "
+                 f"(expected {shorten_home(expected_config)})"))
+    elif os.path.exists(config_link):
+        results.append(
+            ("config symlink", "WRONG", "exists but is not a symlink"))
+    else:
+        results.append(("config symlink", "MISSING", ""))
+
+    # Agent socket directory
+    agent_dir = os.path.join(HOME, ".ssh", "agent")
+    if os.path.isdir(agent_dir):
+        results.append(("~/.ssh/agent/", "ok", "directory exists"))
+    else:
+        results.append(("~/.ssh/agent/", "MISSING", "directory not found"))
+
+    # Local agent socket
+    local_sock = os.path.join(HOME, ".ssh", "agent", "local.sock")
+    if os.path.exists(local_sock):
+        results.append(("local.sock", "ok", "socket exists"))
+    else:
+        results.append(("local.sock", "MISSING", "not running"))
+
+    # Mux socket
+    mux_sock = os.path.join(HOME, ".ssh", "agent", "mux.sock")
+    if os.path.exists(mux_sock):
+        results.append(("mux.sock", "ok", "socket exists"))
+    else:
+        results.append(("mux.sock", "MISSING", "not running"))
+        return results
+
+    # Test mux is responsive via ssh-add -l with SSH_AUTH_SOCK pointing to mux
+    mux_env = os.environ.copy()
+    mux_env["SSH_AUTH_SOCK"] = mux_sock
+    try:
+        r = subprocess.run(
+            ["ssh-add", "-l"], capture_output=True, text=True,
+            timeout=5, env=mux_env)
+        rc, out = r.returncode, r.stdout.strip()
+    except FileNotFoundError:
+        results.append(("mux responsive", "WRONG", "ssh-add not found"))
+        return results
+    except subprocess.TimeoutExpired:
+        results.append(("mux responsive", "WRONG", "agent timed out (unresponsive)"))
+        return results
+    if rc in (0, 1):
+        # rc=0 means keys listed, rc=1 means "no identities" — both mean agent works
+        results.append(("mux responsive", "ok", out or "(no keys loaded)"))
+    else:
+        results.append(("mux responsive", "WRONG", f"ssh-add -l failed (rc={rc})"))
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Check: Claude setup
+# ---------------------------------------------------------------------------
+
+def check_claude():
+    """Check ~/.claude symlink."""
+    results = []
+    claude_link = os.path.join(HOME, ".claude")
+    expected = os.path.join(HOME, "github", "mithro", "dot-claude")
+
+    if os.path.islink(claude_link):
+        target = os.path.realpath(claude_link)
+        if target == os.path.realpath(expected):
+            results.append(
+                ("~/.claude", "ok", f"-> {shorten_home(expected)}"))
+        else:
+            results.append(
+                ("~/.claude", "WRONG",
+                 f"-> {shorten_home(target)} "
+                 f"(expected {shorten_home(expected)})"))
+    elif os.path.exists(claude_link):
+        results.append(
+            ("~/.claude", "WRONG", "exists but is not a symlink"))
+    else:
+        results.append(("~/.claude", "MISSING", ""))
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Check: miscellaneous
+# ---------------------------------------------------------------------------
+
+def check_misc():
+    """Check ~/rcfiles symlink, ~/.shell_logs, git remote, and submodules."""
+    results = []
+
+    # ~/rcfiles -> ~/github/mithro/rcfiles
+    rcfiles_link = os.path.join(HOME, "rcfiles")
+    expected_target = os.path.join(HOME, "github", "mithro", "rcfiles")
+    if os.path.islink(rcfiles_link):
+        target = os.path.realpath(rcfiles_link)
+        if target == os.path.realpath(expected_target):
+            results.append(
+                ("~/rcfiles", "ok",
+                 f"-> {shorten_home(expected_target)}"))
+        else:
+            results.append(
+                ("~/rcfiles", "WRONG",
+                 f"-> {shorten_home(target)} "
+                 f"(expected {shorten_home(expected_target)})"))
+    elif os.path.exists(rcfiles_link):
+        results.append(
+            ("~/rcfiles", "WRONG", "exists but is not a symlink"))
+    else:
+        results.append(("~/rcfiles", "MISSING", ""))
+
+    # ~/.shell_logs directory
+    shell_logs = os.path.join(HOME, ".shell_logs")
+    if os.path.isdir(shell_logs):
+        results.append(("~/.shell_logs", "ok", "directory exists"))
+    else:
+        results.append(("~/.shell_logs", "MISSING", "directory not found"))
+
+    # Git remote origin should be SSH format
+    rc, origin = run(["git", "-C", RCFILES, "remote", "get-url", "origin"])
+    if rc == 0:
+        if origin.startswith("git@") or origin.startswith("git+ssh://"):
+            results.append(("git remote", "ok", f"SSH ({origin})"))
+        elif origin.startswith("https://"):
+            results.append(
+                ("git remote", "WRONG",
+                 f"HTTPS ({origin}), should be SSH"))
+        else:
+            results.append(("git remote", "ok", origin))
+    else:
+        results.append(("git remote", "WRONG", "could not read origin"))
+
+    # Git submodules initialized (no '-' prefix in status)
+    rc, sub_status = run(
+        ["git", "-C", RCFILES, "submodule", "status", "--recursive"],
+        timeout=30)
+    if rc == 0 and sub_status:
+        lines = sub_status.strip().split("\n")
+        uninit = [l.strip() for l in lines if l.strip().startswith("-")]
+        total = len(lines)
+        if uninit:
+            results.append(
+                ("submodules", "WRONG",
+                 f"{len(uninit)}/{total} uninitialized"))
+        else:
+            results.append(
+                ("submodules", "ok", f"{total}/{total} initialized"))
+    elif rc == 0:
+        results.append(("submodules", "ok", "none defined"))
+    else:
+        results.append(("submodules", "WRONG", "could not check status"))
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main():
+    total_ok = 0
+    total_problems = 0
+
+    # --- Packages ---
+    pkg_results = check_packages()
+    ok, problems = print_table(
+        "PACKAGES",
+        ["Package", "Status", "Version", "Source"],
+        pkg_results)
+    total_ok += ok
+    total_problems += problems
+
+    # Install hints for missing packages
+    if problems:
+        missing_apt = [r[0] for r in pkg_results
+                       if r[1] == "MISSING" and r[3] == "apt"]
+        missing_standalone = [r[0] for r in pkg_results
+                              if r[1] == "MISSING" and r[3] == "standalone"]
+        if missing_apt:
+            print(f"\n  Install: sudo apt-get install {' '.join(missing_apt)}")
+        if missing_standalone:
+            print(f"  Missing standalone tools: {', '.join(missing_standalone)}")
+            print("  Re-run setup.sh to install them")
+
+    # --- Config Symlinks ---
+    config_results = check_config_symlinks()
+    ok, problems = print_table(
+        "CONFIG SYMLINKS",
+        ["File", "Status", "Details"],
+        config_results)
+    total_ok += ok
+    total_problems += problems
+
+    # --- Bin Scripts ---
+    bin_results = check_bin_symlinks()
+    ok, problems = print_table(
+        "BIN SCRIPTS",
+        ["Script", "Status", "Details"],
+        bin_results)
+    total_ok += ok
+    total_problems += problems
+
+    # --- SSH ---
+    ssh_results = check_ssh()
+    ok, problems = print_table(
+        "SSH",
+        ["Item", "Status", "Details"],
+        ssh_results)
+    total_ok += ok
+    total_problems += problems
+
+    # --- SSH Agent Mux ---
+    mux_results = check_ssh_agent_mux()
+    ok, problems = print_table(
+        "SSH AGENT MUX",
+        ["Item", "Status", "Details"],
+        mux_results)
+    total_ok += ok
+    total_problems += problems
+
+    # --- Claude ---
+    claude_results = check_claude()
+    ok, problems = print_table(
+        "CLAUDE",
+        ["Item", "Status", "Details"],
+        claude_results)
+    total_ok += ok
+    total_problems += problems
+
+    # --- Misc ---
+    misc_results = check_misc()
+    ok, problems = print_table(
+        "OTHER",
+        ["Item", "Status", "Details"],
+        misc_results)
+    total_ok += ok
+    total_problems += problems
+
+    # --- Final summary ---
+    print(f"\n{'=' * 40}")
+    total = total_ok + total_problems
+    if total_problems:
+        print(f"TOTAL: {total_ok}/{total} ok, {total_problems} PROBLEMS")
+    else:
+        print(f"TOTAL: {total_ok}/{total} ok — all good!")
+    print()
+
+    return 1 if total_problems else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

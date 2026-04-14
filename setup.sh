@@ -20,7 +20,11 @@ if [[ "$CURRENT_ORIGIN" =~ ^https://github.com/(.*)$ ]]; then
 fi
 
 # Set Up my RC files.
-SERVER=$(dpkg -l ubuntu-desktop > /dev/null 2>&1; echo $?)
+if dpkg -l ubuntu-desktop > /dev/null; then
+	SERVER=0
+else
+	SERVER=1
+fi
 
 # Detect repository location and ensure ~/rcfiles symlink exists
 # The repository can be at ~/github/mithro/rcfiles with ~/rcfiles as a symlink
@@ -70,7 +74,7 @@ function linkit {
 		F=`basename $FP`
 
 		# Remove the old file
-		rm -f ~/.$F 2> /dev/null
+		rm -f ~/.$F
 
 		# Generate a new file
 		# FIXME: Check we are not overriding any local changes!
@@ -141,7 +145,9 @@ function ssh {
 	done
 
 	# Fix key permissions
-	chmod 600 $RCFILES/ssh/keys/* 2>/dev/null || true
+	if ls "$RCFILES"/ssh/keys/* > /dev/null; then
+		chmod 600 "$RCFILES"/ssh/keys/*
+	fi
 
 	# Set up authorized keys if a server
 	if [ $SERVER -eq 1 ]; then
@@ -237,7 +243,7 @@ function ack {
 function gh {
 	# Install GitHub CLI (gh) from official repository
 	# Check if gh is already installed
-	if command -v gh &> /dev/null; then
+	if command -v gh > /dev/null; then
 		echo "gh is already installed, skipping..."
 		return 0
 	fi
@@ -258,13 +264,37 @@ function gh {
 function uv_install {
 	# Install uv Python package manager from astral.sh
 	# Check if uv is already installed
-	if command -v uv &> /dev/null; then
+	if command -v uv > /dev/null; then
 		echo "uv is already installed, skipping..."
 		return 0
 	fi
 
 	echo "Installing uv..."
 	curl -LsSf https://astral.sh/uv/install.sh | sh
+}
+
+function ssh_agent_mux {
+	# Install ssh-agent-mux from cached binary in repo
+	local ARCH
+	ARCH=$(dpkg --print-architecture)
+	local CACHED_BIN="$RCFILES/ssh/bin/ssh-agent-mux-linux-${ARCH}"
+
+	if [ ! -f "$CACHED_BIN" ]; then
+		echo "Warning: No cached ssh-agent-mux binary for ${ARCH}, skipping"
+		echo "To add support: $RCFILES/ssh/bin/update-ssh-agent-mux"
+		return 0
+	fi
+
+	echo "Installing ssh-agent-mux from repo cache..."
+	cp "$CACHED_BIN" ~/bin/ssh-agent-mux
+	chmod 755 ~/bin/ssh-agent-mux
+
+	# Set up config symlink
+	mkdir -p ~/.config/ssh-agent-mux
+	ln -sf "$RCFILES/ssh/ssh-agent-mux.toml" ~/.config/ssh-agent-mux/ssh-agent-mux.toml
+
+	# Create agent socket directory
+	mkdir -p ~/.ssh/agent
 }
 
 function claude {
@@ -309,6 +339,7 @@ pkgs
 ack
 gh
 uv_install
+ssh_agent_mux
 ssh
 claude
 
