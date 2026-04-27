@@ -106,6 +106,37 @@ function bin {
 	done
 }
 
+function bash_completions {
+	# Symlink vendored completions into the XDG location bash-completion's
+	# lazy loader (_completion_loader) checks first.
+	# Yields gracefully if the system package later ships the same file.
+	local DEST_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions"
+	mkdir -p "$DEST_DIR"
+
+	for FP in "$RCFILES"/bash/completion/*; do
+		[ -f "$FP" ] || continue
+		local NAME
+		NAME=$(basename "$FP")
+
+		# Skip helper scripts and docs — only command-named files are completions.
+		case "$NAME" in
+			update-*|README*|*.md) continue;;
+		esac
+
+		local DEST="$DEST_DIR/$NAME"
+		local SYS="/usr/share/bash-completion/completions/$NAME"
+
+		if [ -f "$SYS" ]; then
+			echo "$SYS exists; removing local override $DEST"
+			rm -f "$DEST"
+			continue
+		fi
+
+		echo "$FP -> $DEST"
+		ln -sf "$FP" "$DEST"
+	done
+}
+
 function ssh {
 	mkdir -p ~/.ssh
 	mkdir -p ~/.ssh/tmp
@@ -212,6 +243,7 @@ EOF
 function pkgs {
 	sudo apt-get -y install \
 		ascii \
+		bash-completion \
 		bpython \
 		curl \
 		git \
@@ -369,6 +401,7 @@ linkit vim
 
 pkgs
 
+bash_completions
 ack
 gh
 uv_install
