@@ -220,6 +220,8 @@ function pkgs {
 		jq \
 		kitty-terminfo \
 		mosh \
+		python3-dbus \
+		python3-gi \
 		shellcheck \
 		tmux \
 		zsh
@@ -314,6 +316,19 @@ function claude {
 	elif [ ! -L ~/.claude ]; then
 		echo "Warning: ~/.claude exists but is not a symlink"
 		echo "Please manually fix this before continuing."
+	fi
+
+	# claude-notify-gnome provides the desktop notification hook referenced
+	# by dot-claude's settings.json. Clone it so the hooks resolve, and (on
+	# desktops) install its GNOME focus systemd user service.
+	NOTIFY_DIR=~/github/mithro/claude-notify-gnome
+	if [ ! -d "$NOTIFY_DIR" ]; then
+		echo "Cloning claude-notify-gnome repository..."
+		mkdir -p ~/github/mithro
+		git clone git@github.com:mithro/claude-notify-gnome.git "$NOTIFY_DIR"
+	fi
+	if [ $SERVER -ne 1 ] && [ -x "$NOTIFY_DIR/install_service.sh" ]; then
+		( cd "$NOTIFY_DIR" && ./install_service.sh ) || echo "Warning: claude-notify-gnome focus service not installed"
 	fi
 }
 
