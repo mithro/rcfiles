@@ -5,7 +5,7 @@
 	path = vim/bundle/vim-go
 	url = https://github.com/fatih/vim-go.git
 [submodule "vim/bundle/YouCompleteMe"]
-	path = vim/bundle-disable/YouCompleteMe
+	path = vim/bundle/YouCompleteMe
 	url = https://github.com/Valloric/YouCompleteMe.git
 	ignore = dirty
 [submodule "vim/bundle/vim-pathogen"]
