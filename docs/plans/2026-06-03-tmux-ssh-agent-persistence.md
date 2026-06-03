@@ -31,6 +31,32 @@ the original design; reality evolved during execution).
   logout. Only the tmux **server** (still in `kitty-*.scope`) was fragile — which C3 fixes.
   Open question to confirm empirically after cutover: do wrapper-spawned scopes inherit the
   pinned `openssh_agent`? (Server-forked panes will, via the unit `Environment=`.)
+- **C4 zprofile guard — DONE.** Marker `~/.config/ssh-agent-local-only` created (laptop-local,
+  not in repo). `tmux/zprofile` wraps the agent-mux block in a marker-gated `if/else`
+  (commit `5d61d70`): **13 insertions, 0 deletions** — original code untouched under `else`, so
+  servers (no marker) are unaffected. Verified `zsh -n` OK + guard resolves to
+  `/run/user/1000/openssh_agent`. Empirical login test deferred to cutover.
+
+### Cutover + acceptance — DO AT NEXT REBOOT (C5 + C6)
+
+Reboot is the clean cutover: the old kitty-parented server on `/tmp/tmux-1000/default` goes
+away and `tmux.service` starts the managed server before login. (A reboot is already pending
+for the unrelated WatchdogSec fix, so this rides along.) After rebooting, run:
+
+1. Services up at boot (check from a TTY before graphical login if you want):
+   `systemctl --user is-active ssh-agent.socket tmux.service` → `active active`
+2. Server in its OWN unit, not a terminal scope:
+   `systemctl --user show tmux.service -p ControlGroup -p MainPID`
+   → `…/user@1000.service/app.slice/tmux.service` (NOT a `kitty-*.scope`)
+3. A pane inherits the managed agent:
+   `tmux new-window 'echo $SSH_AUTH_SOCK; sleep 2'` → `/run/user/1000/openssh_agent`
+4. Load your key once (empty by design): `ssh-add ~/.ssh/keys/new_misc_key`; `ssh-add -l`
+5. zprofile took the managed path, no mux spawned:
+   `grep local-only ~/.ssh/agent/zprofile.*.log | tail`; `pgrep -x ssh-agent-mux` → empty
+6. **THE REAL GATE — survive logout/login:** note
+   `systemctl --user show tmux.service -p MainPID` = PID_before; log out, log back in;
+   `systemctl --user is-active tmux.service ssh-agent.socket` → `active active`;
+   MainPID == PID_before (server did NOT restart); in a pane `ssh-add -l` still lists your key.
 
 ---
 
