@@ -1,9 +1,36 @@
 # Plan: tmux + ssh-agent that survive a Wayland crash / X logout
 
-**Status:** design locked, not yet implemented · **Living document** — update as you execute.
+**Status:** IN PROGRESS — batch 1 (Components 1–3) done & verified 2026-06-03 · **Living document.**
 **Machine:** the laptop (x1c, Ubuntu 26.04, systemd 259, tmux 3.6, UID 1000, GNOME/Wayland).
 **Scope chosen:** survive *compositor crash* + *logout/login*. **Not** reboot. From-now-on
 (no in-place rescue of today's 3 running sessions).
+
+## Execution log (2026-06-03)
+
+Where this log differs from the component bodies below, **the log wins** (the bodies are
+the original design; reality evolved during execution).
+
+- **C1 lingering — DONE.** `loginctl enable-linger tim` (no sudo needed). `Linger=yes`,
+  `/var/lib/systemd/linger/tim` present.
+- **C2 agent — DONE, EVOLVED.** Discovered Ubuntu 26.04 ships a stock **`ssh-agent.socket`**
+  (`ListenStream=%t/openssh_agent`, `WantedBy=sockets.target`, no `PartOf=graphical-session`)
+  — i.e. *already* a dedicated, empty, manual-key agent that survives logout with lingering.
+  So **adopted the stock socket instead of writing a custom unit** (my first attempt named the
+  unit `ssh-agent.service`, which silently *shadowed* the stock one — removed it). Net change:
+  `systemctl --user enable --now ssh-agent.socket`; SSH_AUTH_SOCK target is
+  **`/run/user/1000/openssh_agent`**. Verified: socket live, `ssh-add -l` → "no identities",
+  cgroup `…/user@1000.service/app.slice/ssh-agent.service`. No custom `ssh-agent.service` or
+  `environment.d` file remains.
+- **C3 tmux.service — DONE (enabled, not started).** Pinned the agent **in the unit** via
+  `Environment=SSH_AUTH_SOCK=%t/openssh_agent` + `Requires/After=ssh-agent.socket`. Fixed a
+  latent bug: `~/.tmux-help` was missing → symlinked to `rcfiles/tmux/tmux-help`. Unit is
+  `loaded; enabled; inactive` (activates at reboot cutover).
+- **Discovery (informs C4–C6):** each tmux **pane already runs in its own transient
+  `tmux-spawn-<uuid>.scope`** under `app.slice` (external wrapper that launches `claude`
+  panes), so pane *contents* are already cgroup-isolated and, with lingering, already survive
+  logout. Only the tmux **server** (still in `kitty-*.scope`) was fragile — which C3 fixes.
+  Open question to confirm empirically after cutover: do wrapper-spawned scopes inherit the
+  pinned `openssh_agent`? (Server-forked panes will, via the unit `Environment=`.)
 
 ---
 
