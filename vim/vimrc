@@ -25,7 +25,14 @@ set modelines=5
 set modeline
 
 " Persistent undo
-set undodir=~/.vim/undodir
+if has('persistent_undo')
+  let s:undodir = expand('~/.vim/undodir')
+  if !isdirectory(s:undodir)
+    call mkdir(s:undodir, 'p', 0700)
+  endif
+  let &undodir = s:undodir
+  set undofile
+endif
 
 " Default formatting style and overrides for given types.
 au BufNewFile,BufRead *.py setlocal et ts=4 sw=4 sts=4
