@@ -1,6 +1,7 @@
 # Plan: tmux + ssh-agent that survive a Wayland crash / X logout
 
-**Status:** IN PROGRESS — batch 1 (Components 1–3) done & verified 2026-06-03 · **Living document.**
+**Status:** COMPLETE — cutover succeeded at the 2026-06-05 reboot; reproducible via `setup.sh`
+(`tmux_persistence`, `SERVER=0`). C4 reverted (inert on a bash login shell). · **Living document.**
 **Machine:** the laptop (x1c, Ubuntu 26.04, systemd 259, tmux 3.6, UID 1000, GNOME/Wayland).
 **Scope chosen:** survive *compositor crash* + *logout/login*. **Not** reboot. From-now-on
 (no in-place rescue of today's 3 running sessions).
@@ -83,6 +84,27 @@ survives and the unlocked key persists. The reboot already proved the *harder* f
 boot-start path; logout survival is structurally guaranteed (server under `user@` + lingering).
 The only thing logout adds is proving the *unlocked key* persists across it (it should — the
 agent process is never killed).
+
+### Phase 2 — 2026-06-05: reproducibility + C4 revert
+
+- **C4 reverted** (commit `c063ae0`): the zprofile guard was inert on this bash-login laptop
+  *and* on servers (no marker → original path), so it was removed and the marker deleted. The
+  `tmux.service` `Environment=` pin is the actual working mechanism.
+- **`tmux.service` now lives in rcfiles** at `systemd/user/tmux.service`, symlinked into
+  `~/.config/systemd/user/` (running server pid 2454 was undisturbed by the swap + reload).
+- **`setup.sh` `tmux_persistence()`** (commit `2190fb6`, `SERVER=0` only) makes it reproducible:
+  links `~/.tmux-help` (linkit skips hyphenated names), symlinks the unit, enables the stock
+  `ssh-agent.socket`, enables `tmux.service` (not `--now`), and `loginctl enable-linger`.
+- **Why desktop-only (`SERVER=0`):** the unit pins `SSH_AUTH_SOCK=%t/openssh_agent` — the right
+  agent on an Ubuntu desktop, but wrong for servers, where the zsh `.zprofile` + `ssh-agent-mux`
+  path aggregates forwarded keys. Servers are untouched.
+
+**Final split — repo vs laptop-local:**
+- *In rcfiles (committed):* `systemd/user/tmux.service`, the `setup.sh` installer, this doc.
+- *Laptop-local (made by `setup.sh`, not in repo):* the `~/.config/systemd/user/tmux.service`
+  symlink, enabled units, lingering. Reproduced by running `setup.sh` on any desktop.
+- *Manual step in normal use:* after each **reboot**, `ssh-add ~/.ssh/keys/new_misc_key` once
+  (agent is empty by design); it then persists across crashes/logout until the next reboot.
 
 ---
 
@@ -354,8 +376,8 @@ Record PID_before/after and outputs here on execution.
 - `systemctl --user daemon-reload`
 
 ## Open items / future (not in scope now)
-- **Reproducibility:** have `setup.sh` install the two units + `environment.d` + marker on
-  `SERVER=0` hosts, so other desktops inherit this. (Would move units into rcfiles.)
+- **Reproducibility:** ✅ DONE (Phase 2) — `setup.sh` `tmux_persistence()` installs the unit +
+  enables `ssh-agent.socket` + lingering on `SERVER=0` hosts; `tmux.service` lives in rcfiles.
 - **gcr coexistence:** gcr-ssh-agent stays enabled and harmless; we simply stop *pointing* at
   it. If GUI key-unlock is wanted later, decide gcr-vs-dedicated precedence explicitly.
 - **Reboot persistence** of layouts (tmux-resurrect/continuum) — deliberately excluded.
