@@ -58,6 +58,32 @@ for the unrelated WatchdogSec fix, so this rides along.) After rebooting, run:
    `systemctl --user is-active tmux.service ssh-agent.socket` → `active active`;
    MainPID == PID_before (server did NOT restart); in a pane `ssh-add -l` still lists your key.
 
+### Acceptance results — 2026-06-05 reboot: CUTOVER SUCCEEDED ✅
+
+Verified post-reboot (`tmp/acceptance_check.py`):
+- `Linger=yes` (persisted across reboot).
+- `ssh-agent.socket` + `ssh-agent.service` + `tmux.service` all **active at boot**.
+- **tmux server (pid 2454) cgroup = `…/user@1000.service/app.slice/tmux.service`** — no longer
+  in a kitty scope. The tmux *client* (pid 7721) is in `kitty-7514-0.scope` (disposable). This
+  is exactly the target split: persistent server, throwaway client.
+- Server's real env `SSH_AUTH_SOCK=/run/user/1000/openssh_agent` (from the unit `Environment=`
+  pin); this pane inherited it. `new_misc_key` loaded. **No `ssh-agent-mux` running.**
+- `default` session, 5 windows, attached.
+
+**Discovery — laptop login shell is `/bin/bash`, not zsh.** `~/.zprofile` never runs here, so
+the agent mechanism that actually works on the laptop is the **`tmux.service` `Environment=`
+pin** (C1–C3) — NOT the zprofile guard. This *validates* pinning in the unit (relying on
+zprofile/environment.d alone would have failed here). Consequently the **C4 zprofile guard +
+marker are inert on this laptop** (they only fire on zsh hosts that run `.zprofile`; servers
+have no marker → behavior unchanged). C4 is harmless + future-proofs a zsh laptop; revert if
+strict YAGNI is preferred.
+
+**Optional empirical confirmation still available:** a logout/login cycle to show pid 2454
+survives and the unlocked key persists. The reboot already proved the *harder* full-teardown +
+boot-start path; logout survival is structurally guaranteed (server under `user@` + lingering).
+The only thing logout adds is proving the *unlocked key* persists across it (it should — the
+agent process is never killed).
+
 ---
 
 ## Why tmux dies today (verified, not assumed)
