@@ -51,17 +51,6 @@ AGENT_LOCK="$HOME/.ssh/agent/.lock"
 
 mkdir -p "$HOME/.ssh/agent"
 
-# A host with a persistent, systemd-managed ssh-agent (the laptop: Ubuntu's
-# ssh-agent.socket -> $XDG_RUNTIME_DIR/openssh_agent, kept alive across logout
-# by `loginctl enable-linger`) opts out of the local-agent + forwarded-symlink
-# + mux machinery below via a marker file. That machinery is for remote/server
-# logins where you ssh -A in; servers have no marker and keep the old behavior.
-# See: ~/github/mithro/rcfiles/docs/plans/2026-06-03-tmux-ssh-agent-persistence.md
-if [[ -f "$HOME/.config/ssh-agent-local-only" ]]; then
-	export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/openssh_agent"
-	_zlog "agent: local-only marker; SSH_AUTH_SOCK=$SSH_AUTH_SOCK (managed); skipping mux"
-else
-
 # Capture the forwarded agent BEFORE taking the lock, since SSH_AUTH_SOCK
 # still points to the ephemeral forwarded socket at this point.
 _FORWARDED_SSH_AUTH_SOCK="$SSH_AUTH_SOCK"
@@ -191,8 +180,6 @@ _zlog "acquiring flock..."
 	_zlog "releasing flock"
 } 9>"$AGENT_LOCK"
 _zlog "flock released"
-
-fi  # end ssh-agent: local-only (laptop, managed agent) vs mux (remote/server)
 
 _zlog "writing env file..."
 # Environment variables to update.
