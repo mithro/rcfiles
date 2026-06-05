@@ -332,6 +332,38 @@ function claude {
 	fi
 }
 
+function tmux_persistence {
+	# Desktop only. Make the tmux server and its ssh-agent survive a Wayland/
+	# compositor crash and X/Wayland logout by running them as lingering systemd
+	# --user units instead of as children of the terminal that launched them.
+	# See docs/plans/2026-06-03-tmux-ssh-agent-persistence.md
+	if [ $SERVER -eq 1 ]; then
+		return 0
+	fi
+
+	# Window 0 of the default tmux session tails this. linkit skips it (the
+	# hyphen in the name collides with the host-variant convention), so link it
+	# explicitly here.
+	ln -sf "$RCFILES/tmux/tmux-help" ~/.tmux-help
+
+	# tmux server as its own unit. It pins SSH_AUTH_SOCK at Ubuntu's stock
+	# socket-activated ssh-agent ($XDG_RUNTIME_DIR/openssh_agent), so every pane
+	# inherits a persistent, dedicated agent regardless of bash/zsh login shell.
+	mkdir -p ~/.config/systemd/user
+	ln -sf "$RCFILES/systemd/user/tmux.service" ~/.config/systemd/user/tmux.service
+	systemctl --user daemon-reload || true
+
+	# Enable the stock ssh-agent socket (dedicated, empty, no auto-key-loading).
+	systemctl --user enable --now ssh-agent.socket || true
+
+	# Enable tmux.service but do NOT start it now: an existing tmux server may
+	# hold the default socket. It activates cleanly at the next boot/login.
+	systemctl --user enable tmux.service || true
+
+	# Keep the user manager (hence the agent + tmux server) alive with no session.
+	loginctl enable-linger "$USER" || true
+}
+
 # Fix permissions
 umask 022
 
@@ -357,6 +389,7 @@ uv_install
 ssh_agent_mux
 ssh
 claude
+tmux_persistence
 
 if [ $SERVER -ne 1 ]; then
 	(

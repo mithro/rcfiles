@@ -1,0 +1,25 @@
+[Unit]
+Description=tmux server (persistent across logout/compositor crash)
+Documentation=man:tmux(1)
+# Ubuntu's stock socket-activated ssh-agent on %t/openssh_agent (dedicated,
+# empty, no auto-key-loading). Require it so the agent path exists before panes.
+Requires=ssh-agent.socket
+After=ssh-agent.socket
+
+[Service]
+Type=forking
+# Decisive agent pin: every pane the server forks inherits this (SSH_AUTH_SOCK
+# is deliberately excluded from tmux's update-environment), independent of the
+# gcr-vs-openssh ordering in the session environment. Works for bash *and* zsh
+# login shells, since panes inherit it from the server's birth environment.
+Environment=SSH_AUTH_SOCK=%t/openssh_agent
+# Start a detached "default" session whose window 0 (tail -f ~/.tmux-help, kept
+# alive by remain-on-exit) stops the server exiting when empty. Mirrors the
+# session ~/.zprofile expects, so a later login just attaches to it.
+ExecStart=/usr/bin/tmux new-session -d -s default -n h "tail -f %h/.tmux-help"
+ExecStartPost=/usr/bin/tmux set-window-option -t default:h remain-on-exit on
+ExecStop=/usr/bin/tmux kill-server
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
