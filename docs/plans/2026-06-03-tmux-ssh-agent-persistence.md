@@ -1,7 +1,8 @@
 # Plan: tmux + ssh-agent that survive a Wayland crash / X logout
 
-**Status:** COMPLETE — cutover succeeded at the 2026-06-05 reboot; reproducible via `setup.sh`
-(`tmux_persistence`, `SERVER=0`). C4 reverted (inert on a bash login shell). · **Living document.**
+**Status:** MERGED WITH UPSTREAM (M2), 2026-06-06 — laptop = shared `ssh-agent.service` started
+by `tmux.service` (no mux); servers = `ssh-agent` + `ssh-agent-mux`. Staged + reboot-ready;
+activates at next reboot. Push pending. See **Phase 3** below. · **Living document.**
 **Machine:** the laptop (x1c, Ubuntu 26.04, systemd 259, tmux 3.6, UID 1000, GNOME/Wayland).
 **Scope chosen:** survive *compositor crash* + *logout/login*. **Not** reboot. From-now-on
 (no in-place rescue of today's 3 running sessions).
@@ -105,6 +106,35 @@ agent process is never killed).
   symlink, enabled units, lingering. Reproduced by running `setup.sh` on any desktop.
 - *Manual step in normal use:* after each **reboot**, `ssh-add ~/.ssh/keys/new_misc_key` once
   (agent is empty by design); it then persists across crashes/logout until the next reboot.
+
+### Phase 3 — 2026-06-06: merged with upstream's April ssh-agent solution (M2)
+
+**Discovery:** this laptop's rcfiles was 3 months behind `origin`, which already had a complete
+**systemd ssh-agent + ssh-agent-mux** solution (design spec + implementation, 2026-03-28…04-05).
+The Jun 3–5 work above was a parallel reimplementation of the *agent* half. Reconciled per
+direction: **servers use ssh-agent + ssh-agent-mux; laptops use the SAME ssh-agent, started by
+tmux, no mux.**
+
+- **Clean merge** of `origin-http/master` (`merge-tree`: 0 conflicts; also synced 3 months of
+  own vim/ssh/bash work). Merge commit + follow-up refactor commits.
+- **One shared agent** = upstream `ssh-agent.service` + `ssh-agent-start.sh` →
+  `~/.ssh/agent/local.sock`, installed on ALL hosts by a new `ssh_agent()` in `setup.sh`. This
+  is the socket the `ssh/bin/ssh-add` wrapper already targets (the decisive reason to use it,
+  not the stock `openssh_agent`).
+- **Servers (`SERVER=1`):** `ssh_agent_mux()` also enables the mux service; the upstream zprofile
+  points `SSH_AUTH_SOCK` at `mux.sock` (untouched).
+- **Laptops (`SERVER=0`):** `tmux_persistence()` enables `tmux.service`, which
+  `Requires=ssh-agent.service` and pins `SSH_AUTH_SOCK=~/.ssh/agent/local.sock`. No mux. Stock
+  `ssh-agent.socket` (openssh_agent) is **masked** (enabled at global scope; would otherwise set
+  a competing `SSH_AUTH_SOCK`).
+- **Supersedes the Phase 1–2 stock-`openssh_agent` choice:** the laptop now uses the shared
+  local agent so `ssh-add` is consistent with the rest of the ecosystem.
+
+**State:** staged + reboot-ready, verified — `ssh-agent.service` enabled → `ssh-agent-start.sh`;
+socket masked; `tmux.service` requires it + pins `local.sock`; no mux; linger on; all symlinks
+into rcfiles. The CURRENT session still runs on `openssh_agent` (pid 2454, undisturbed); **M2
+activates at the next reboot.** After that reboot, `ssh-add ~/.ssh/keys/new_misc_key` once (via
+the `ssh/bin/ssh-add` wrapper → `local.sock`).
 
 ---
 
