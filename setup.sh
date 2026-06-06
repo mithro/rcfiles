@@ -435,6 +435,12 @@ function tmux_persistence {
 	ln -sf "$RCFILES/systemd/user/tmux.service" ~/.config/systemd/user/tmux.service
 	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user daemon-reload || true
 
+	# Ubuntu's stock ssh-agent.socket (openssh_agent) is redundant here and would
+	# set a competing SSH_AUTH_SOCK; mask it so the local agent (local.sock) is the
+	# only ssh-agent on this host. It is enabled at global scope, so mask (not just
+	# disable) is required to keep it from starting at boot.
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user mask ssh-agent.socket || true
+
 	# Enable tmux.service but do NOT start it now: an existing tmux server may
 	# hold the default socket. It activates cleanly at the next boot/login.
 	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable tmux.service || true
