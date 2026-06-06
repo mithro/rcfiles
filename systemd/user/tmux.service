@@ -1,18 +1,20 @@
 [Unit]
 Description=tmux server (persistent across logout/compositor crash)
 Documentation=man:tmux(1)
-# Ubuntu's stock socket-activated ssh-agent on %t/openssh_agent (dedicated,
-# empty, no auto-key-loading). Require it so the agent path exists before panes.
-Requires=ssh-agent.socket
-After=ssh-agent.socket
+# The local ssh-agent (ssh-agent.service + ssh-agent-start.sh) provides the
+# stable socket ~/.ssh/agent/local.sock. Require it so the agent is up first —
+# this is how the agent is "started by tmux" on a laptop (no ssh-agent-mux here;
+# the mux is a server-only front-end for the same agent).
+Requires=ssh-agent.service
+After=ssh-agent.service
 
 [Service]
 Type=forking
 # Decisive agent pin: every pane the server forks inherits this (SSH_AUTH_SOCK
-# is deliberately excluded from tmux's update-environment), independent of the
-# gcr-vs-openssh ordering in the session environment. Works for bash *and* zsh
-# login shells, since panes inherit it from the server's birth environment.
-Environment=SSH_AUTH_SOCK=%t/openssh_agent
+# is deliberately excluded from tmux's update-environment). Points at the local
+# agent's stable socket — the SAME one ssh/bin/ssh-add writes to. Works for bash
+# *and* zsh login shells, since panes inherit it from the server's birth env.
+Environment=SSH_AUTH_SOCK=%h/.ssh/agent/local.sock
 # Start a detached "default" session whose window 0 (tail -f ~/.tmux-help, kept
 # alive by remain-on-exit) stops the server exiting when empty. Mirrors the
 # session ~/.zprofile expects, so a later login just attaches to it.

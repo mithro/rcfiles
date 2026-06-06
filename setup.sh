@@ -310,6 +310,25 @@ function uv_install {
 	curl -LsSf https://astral.sh/uv/install.sh | sh
 }
 
+function ssh_agent {
+	# The local ssh-agent, as a lingering systemd --user service, on ALL hosts.
+	# This is "the ssh-agent": on servers it sits behind ssh-agent-mux; on
+	# laptops/desktops it is fronted by the tmux server (see tmux_persistence).
+	# ssh-agent-start.sh binds ~/.ssh/agent/local.<pid>.sock and maintains the
+	# stable ~/.ssh/agent/local.sock symlink that ssh/bin/ssh-add targets.
+	mkdir -p ~/bin ~/.config/systemd/user ~/.ssh/agent
+
+	# Linger so the agent (and the tmux server) survive between login sessions.
+	loginctl enable-linger "$USER" || echo "Warning: loginctl enable-linger failed (may need sudo)" >&2
+
+	ln -sf "$RCFILES/ssh/systemd/ssh-agent-start.sh" ~/bin/ssh-agent-start.sh
+	ln -sf "$RCFILES/ssh/systemd/ssh-agent.service" ~/.config/systemd/user/ssh-agent.service
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user daemon-reload \
+		|| echo "Warning: systemctl daemon-reload failed" >&2
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable ssh-agent.service \
+		|| echo "Warning: systemctl enable ssh-agent.service failed" >&2
+}
+
 function ssh_agent_mux {
 	# Install ssh-agent-mux from cached binary in repo
 	local ARCH
@@ -333,19 +352,15 @@ function ssh_agent_mux {
 	# Create agent socket directory
 	mkdir -p ~/.ssh/agent
 
-	# --- Systemd user services for ssh-agent and ssh-agent-mux ---
-
-	# Enable linger so services survive between login sessions
-	# May fail if polkit denies the request; non-fatal since services
-	# still work within active sessions.
-	loginctl enable-linger "$USER" || echo "Warning: loginctl enable-linger failed (may need sudo)" >&2
-
-	# Install ssh-agent wrapper script (symlink so updates come from repo)
-	ln -sf "$RCFILES/ssh/systemd/ssh-agent-start.sh" ~/bin/ssh-agent-start.sh
-
-	# Install ssh-agent service unit (symlink so updates come from repo)
-	mkdir -p ~/.config/systemd/user
-	ln -sf "$RCFILES/ssh/systemd/ssh-agent.service" ~/.config/systemd/user/ssh-agent.service
+	# --- ssh-agent-mux SERVICE (servers only) ---
+	# The mux aggregates the local agent + a forwarded agent into one socket.
+	# On a laptop/desktop the local agent is fronted by the persistent tmux
+	# server (tmux_persistence) and needs no mux. The local ssh-agent.service
+	# itself is installed for ALL hosts by ssh_agent(), called before this.
+	if [ $SERVER -eq 0 ]; then
+		echo "Desktop host: skipping ssh-agent-mux service (tmux fronts the agent)"
+		return 0
+	fi
 
 	# Install ssh-agent-mux service via its built-in installer
 	# Requires XDG_RUNTIME_DIR for dbus access
@@ -356,11 +371,11 @@ function ssh_agent_mux {
 	ln -sf "$RCFILES/ssh/systemd/ross-williams-ssh-agent-mux.service.d" \
 		~/.config/systemd/user/ross-williams-ssh-agent-mux.service.d
 
-	# Reload and enable
+	# Reload and enable the mux service (ssh-agent.service is enabled by ssh_agent).
 	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user daemon-reload \
 		|| echo "Warning: systemctl daemon-reload failed" >&2
 	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable \
-		ssh-agent.service ross-williams-ssh-agent-mux.service \
+		ross-williams-ssh-agent-mux.service \
 		|| echo "Warning: systemctl enable failed" >&2
 }
 
@@ -411,22 +426,18 @@ function tmux_persistence {
 	# explicitly here.
 	ln -sf "$RCFILES/tmux/tmux-help" ~/.tmux-help
 
-	# tmux server as its own unit. It pins SSH_AUTH_SOCK at Ubuntu's stock
-	# socket-activated ssh-agent ($XDG_RUNTIME_DIR/openssh_agent), so every pane
-	# inherits a persistent, dedicated agent regardless of bash/zsh login shell.
+	# tmux server as its own unit, depending on ssh-agent.service (installed for
+	# all hosts by ssh_agent). It pins SSH_AUTH_SOCK at the local agent's stable
+	# socket (~/.ssh/agent/local.sock) — the SAME agent ssh/bin/ssh-add writes
+	# to — so every pane inherits it regardless of bash/zsh login shell, with no
+	# ssh-agent-mux on this host. (Lingering is set up by ssh_agent.)
 	mkdir -p ~/.config/systemd/user
 	ln -sf "$RCFILES/systemd/user/tmux.service" ~/.config/systemd/user/tmux.service
-	systemctl --user daemon-reload || true
-
-	# Enable the stock ssh-agent socket (dedicated, empty, no auto-key-loading).
-	systemctl --user enable --now ssh-agent.socket || true
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user daemon-reload || true
 
 	# Enable tmux.service but do NOT start it now: an existing tmux server may
 	# hold the default socket. It activates cleanly at the next boot/login.
-	systemctl --user enable tmux.service || true
-
-	# Keep the user manager (hence the agent + tmux server) alive with no session.
-	loginctl enable-linger "$USER" || true
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable tmux.service || true
 }
 
 # Fix permissions
@@ -452,6 +463,7 @@ bash_completions
 ack
 gh
 uv_install
+ssh_agent
 ssh_agent_mux
 ssh
 claude
