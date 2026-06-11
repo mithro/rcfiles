@@ -22,8 +22,8 @@ has nothing equivalent.
 3. **Autosave** every 15 minutes via tmux-continuum; **restore stays
    manual** (`prefix+Ctrl-r`). `@continuum-restore` is deliberately not
    set — no surprise restores of stale state on clean starts.
-4. Program restore whitelist: resurrect defaults **plus `ssh`, `mosh`,
-   and `claude`**.
+4. Program restore whitelist: resurrect defaults **plus `ssh`, `mosh`
+   (process name `mosh-client`), and `claude`**.
 5. A host with no network or uninitialised submodules must still get a
    working (plugin-less) tmux.
 
@@ -87,9 +87,11 @@ Decisions baked into this block:
 
 ### 3. setup.sh changes
 
-- New `tmux_plugins` function, called after `linkit tmux`: runs
-  `~/rcfiles/tmux/plugins/tpm/bin/install_plugins` headlessly so
-  resurrect/continuum exist before the first tmux launch. Wrapped so a
+- New `tmux_plugins` function, called after `linkit tmux` (headless
+  `bin/install_plugins` starts a tmux server and sources `~/.tmux.conf`,
+  so the config — including `TMUX_PLUGIN_MANAGER_PATH` — must already be
+  deployed): runs `~/rcfiles/tmux/plugins/tpm/bin/install_plugins` so
+  resurrect/continuum exist before the first interactive tmux launch. Wrapped so a
   network failure prints a warning instead of killing the `set -e`
   script (same guard pattern as the recent systemd changes,
   `21a6627`). On failure, plugins can later be installed interactively
@@ -98,8 +100,9 @@ Decisions baked into this block:
   per matching suffix, and on hosts where `$BASE_DOMAIN == $DOMAIN`
   (e.g. `mithis.com`) the same part is appended **twice** — the
   currently deployed `~/.tmux.conf` on this machine exhibits the
-  duplication. Fix: skip a part file if it is identical to one already
-  appended. This directly affects the file this project regenerates.
+  duplication. Fix: dedupe **by path** — skip a part file whose path has
+  already been appended (the bug is the same path appearing twice in the
+  suffix list). This directly affects the file this project regenerates.
 
 ### 4. Host-override / continuum ordering
 
