@@ -106,6 +106,37 @@ function bin {
 	done
 }
 
+function bash_completions {
+	# Symlink vendored completions into the XDG location bash-completion's
+	# lazy loader (_completion_loader) checks first.
+	# Yields gracefully if the system package later ships the same file.
+	local DEST_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions"
+	mkdir -p "$DEST_DIR"
+
+	for FP in "$RCFILES"/bash/completion/*; do
+		[ -f "$FP" ] || continue
+		local NAME
+		NAME=$(basename "$FP")
+
+		# Skip helper scripts and docs — only command-named files are completions.
+		case "$NAME" in
+			update-*|README*|*.md) continue;;
+		esac
+
+		local DEST="$DEST_DIR/$NAME"
+		local SYS="/usr/share/bash-completion/completions/$NAME"
+
+		if [ -f "$SYS" ]; then
+			echo "$SYS exists; removing local override $DEST"
+			rm -f "$DEST"
+			continue
+		fi
+
+		echo "$FP -> $DEST"
+		ln -sf "$FP" "$DEST"
+	done
+}
+
 function ssh {
 	mkdir -p ~/.ssh
 	mkdir -p ~/.ssh/tmp
@@ -212,6 +243,7 @@ EOF
 function pkgs {
 	sudo apt-get -y install \
 		ascii \
+		bash-completion \
 		bpython \
 		curl \
 		git \
@@ -223,6 +255,9 @@ function pkgs {
 		shellcheck \
 		tmux \
 		zsh
+
+	# Core dump capture for debugging ssh-agent-mux crashes (soft dependency)
+	sudo apt-get -y install systemd-coredump || true
 
 #		iprint \
 
@@ -295,6 +330,36 @@ function ssh_agent_mux {
 
 	# Create agent socket directory
 	mkdir -p ~/.ssh/agent
+
+	# --- Systemd user services for ssh-agent and ssh-agent-mux ---
+
+	# Enable linger so services survive between login sessions
+	# May fail if polkit denies the request; non-fatal since services
+	# still work within active sessions.
+	loginctl enable-linger "$USER" || echo "Warning: loginctl enable-linger failed (may need sudo)" >&2
+
+	# Install ssh-agent wrapper script (symlink so updates come from repo)
+	ln -sf "$RCFILES/ssh/systemd/ssh-agent-start.sh" ~/bin/ssh-agent-start.sh
+
+	# Install ssh-agent service unit (symlink so updates come from repo)
+	mkdir -p ~/.config/systemd/user
+	ln -sf "$RCFILES/ssh/systemd/ssh-agent.service" ~/.config/systemd/user/ssh-agent.service
+
+	# Install ssh-agent-mux service via its built-in installer
+	# Requires XDG_RUNTIME_DIR for dbus access
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" ~/bin/ssh-agent-mux --install-service \
+		|| echo "Warning: ssh-agent-mux --install-service failed" >&2
+
+	# Install drop-in override (symlink directory so updates come from repo)
+	ln -sf "$RCFILES/ssh/systemd/ross-williams-ssh-agent-mux.service.d" \
+		~/.config/systemd/user/ross-williams-ssh-agent-mux.service.d
+
+	# Reload and enable
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user daemon-reload \
+		|| echo "Warning: systemctl daemon-reload failed" >&2
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable \
+		ssh-agent.service ross-williams-ssh-agent-mux.service \
+		|| echo "Warning: systemctl enable failed" >&2
 }
 
 function clipboard_over_ssh {
@@ -360,6 +425,7 @@ linkit vim
 
 pkgs
 
+bash_completions
 ack
 gh
 uv_install

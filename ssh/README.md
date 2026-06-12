@@ -42,12 +42,31 @@ ssh-agent-mux is a read-only multiplexer: it forwards `list-keys` and `sign` req
 - Read-only flags (`-l`, `-L`, `-E`): Pass through to `SSH_AUTH_SOCK` (the mux)
 - Mutating operations (add key, `-d`, `-D`, `-x`, `-X`): Redirected to `~/.ssh/agent/local.sock`
 
-**`../tmux/zprofile`** — Startup logic (runs on SSH login, before tmux):
-- Starts local ssh-agent with per-PID socket and atomic symlink
+**`../tmux/zprofile`** — Login hook (runs on SSH login, before tmux):
 - Updates forwarded agent symlink to current sshd socket
-- Starts ssh-agent-mux daemon (validates via `/proc/PID/comm`)
+- Ensures systemd user services are started (`systemctl --user start`)
+- Waits for mux socket to appear
 - Serialized with `flock` to prevent races from concurrent SSH logins
 - Writes debug logs to `~/.ssh/agent/zprofile.<pid>.log`
+
+### Systemd Services
+
+Agent processes run as systemd user services (with linger enabled so they
+persist between SSH sessions):
+
+- `ssh-agent.service` — Local ssh-agent with per-PID socket indirection.
+  Uses `~/bin/ssh-agent-start.sh` wrapper for atomic `local.sock` symlink.
+- `ross-williams-ssh-agent-mux.service` — Installed by `ssh-agent-mux --install-service`.
+  Drop-in override adds `Restart=always`, `LimitCORE=infinity`, and ssh-agent ordering.
+
+Core dumps from ssh-agent-mux are captured by `systemd-coredump` (viewable with `coredumpctl`).
+
+Useful commands:
+```bash
+systemctl --user status ssh-agent ross-williams-ssh-agent-mux
+journalctl --user -u ssh-agent -u ross-williams-ssh-agent-mux
+coredumpctl list ssh-agent-mux
+```
 
 ### Installation
 
@@ -62,6 +81,11 @@ Config symlink is also created by `setup.sh`:
 mkdir -p ~/.config/ssh-agent-mux
 ln -sf "$RCFILES/ssh/ssh-agent-mux.toml" ~/.config/ssh-agent-mux/ssh-agent-mux.toml
 ```
+
+`setup.sh` also installs the systemd unit files (`ssh-agent.service` and the
+`ross-williams-ssh-agent-mux.service` drop-in override) and enables linger for
+the current user (`loginctl enable-linger`) so the services persist across
+SSH sessions.
 
 ### Design Decisions
 

@@ -1,0 +1,48 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# ///
+"""Refresh the vendored tmux bash completion from scop/bash-completion upstream.
+
+Run periodically to track upstream. Prints a unified diff of the changes
+(if any) and updates the file in place. Exits 0 whether or not the file
+changed; exits non-zero only on network/IO error.
+"""
+
+from __future__ import annotations
+
+import difflib
+import sys
+import urllib.request
+from pathlib import Path
+
+URL = "https://raw.githubusercontent.com/scop/bash-completion/main/completions-core/tmux.bash"
+DEST = Path(__file__).resolve().parent / "tmux"
+
+
+def main() -> int:
+    with urllib.request.urlopen(URL, timeout=30) as resp:
+        new = resp.read()
+
+    old = DEST.read_bytes() if DEST.exists() else b""
+    if new == old:
+        print(f"Already up-to-date: {DEST} ({len(new)} bytes)")
+        return 0
+
+    if old:
+        diff = difflib.unified_diff(
+            old.decode("utf-8", errors="replace").splitlines(keepends=True),
+            new.decode("utf-8", errors="replace").splitlines(keepends=True),
+            fromfile=f"{DEST.name} (old)",
+            tofile=f"{DEST.name} (new)",
+        )
+        sys.stdout.writelines(diff)
+
+    DEST.write_bytes(new)
+    print(f"Updated: {DEST} ({len(old)} -> {len(new)} bytes)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
