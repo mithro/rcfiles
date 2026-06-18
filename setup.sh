@@ -79,7 +79,14 @@ function linkit {
 		# Generate a new file
 		# FIXME: Check we are not overriding any local changes!
 		TMP=~/.$F.tmp
+		# BASE_DOMAIN/DOMAIN/HOSTNAME can expand to the same suffix (e.g.
+		# BASE_DOMAIN == DOMAIN == mithis.com); append each part file once.
+		SEEN_PARTS=" "
 		for FILE_PART in "$FP-$BASE_DOMAIN" "$FP-$DOMAIN" "$FP-$HOSTNAME"; do
+			case "$SEEN_PARTS" in
+				*" $FILE_PART "*) continue ;;
+			esac
+			SEEN_PARTS="$SEEN_PARTS$FILE_PART "
 			if [ -f $FILE_PART ]; then
 				echo $FILE_PART "->" ~/.$F
 				cat $FILE_PART >> $TMP
