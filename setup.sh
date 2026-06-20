@@ -79,12 +79,26 @@ function linkit {
 		# Generate a new file
 		# FIXME: Check we are not overriding any local changes!
 		TMP=~/.$F.tmp
+		# BASE_DOMAIN/DOMAIN/HOSTNAME can expand to the same suffix (e.g.
+		# BASE_DOMAIN == DOMAIN == mithis.com); append each part file once.
+		SEEN_PARTS=" "
 		for FILE_PART in "$FP-$BASE_DOMAIN" "$FP-$DOMAIN" "$FP-$HOSTNAME"; do
+			case "$SEEN_PARTS" in
+				*" $FILE_PART "*) continue ;;
+			esac
+			SEEN_PARTS="$SEEN_PARTS$FILE_PART "
 			if [ -f $FILE_PART ]; then
 				echo $FILE_PART "->" ~/.$F
 				cat $FILE_PART >> $TMP
 			fi
 		done
+		# Optional postfix: appended LAST, after host-specific parts (e.g.
+		# config that must come after host overrides, like a plugin loader
+		# that reads the final status-right). See docs spec section 4.
+		if [ -f "$FP-postfix" ]; then
+			echo "$FP-postfix" "->" ~/.$F
+			cat "$FP-postfix" >> $TMP
+		fi
 		echo -n $FP "->" ~/.$F
 		if [ -f $TMP ]; then
 			echo " (generated)"
@@ -267,6 +281,26 @@ function pkgs {
 		sudo apt-get -y install \
 			gitk
 	fi
+}
+
+function tmux_plugins {
+	local TPM_INSTALL="$RCFILES/tmux/plugins/tpm/bin/install_plugins"
+	if [ ! -x "$TPM_INSTALL" ]; then
+		echo "Warning: tpm submodule missing; skipping tmux plugin install" >&2
+		return 0
+	fi
+
+	# If a tmux server is already running it may predate the plugin
+	# config; re-source so TMUX_PLUGIN_MANAGER_PATH is set on the server
+	# BEFORE installing. Otherwise tpm falls back to its own parent dir
+	# and clones plugins INSIDE this repo. Errors (e.g. no server
+	# running) are expected and non-fatal.
+	tmux source-file ~/.tmux.conf || true
+
+	# Headless install of @plugin entries into ~/.tmux/plugins/.
+	# Needs network; failure is non-fatal -- install later with prefix+I.
+	"$TPM_INSTALL" \
+		|| echo "Warning: tmux plugin install failed (no network?)" >&2
 }
 
 function crontab {
@@ -488,6 +522,8 @@ linkit tmux
 linkit vim
 
 pkgs
+
+tmux_plugins
 
 bash_completions
 ack
