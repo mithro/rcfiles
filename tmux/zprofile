@@ -142,23 +142,23 @@ if [[ ( -z "$STY" ) && (( ! -z "$SSH_CONNECTION" ) || ( x"$TERM" == x"xterm-256c
 	# NOTE: Logic is inverted — creation is in the else (session-exists)
 	# branch. Pre-existing bug; works in practice because tmux new-session
 	# -d -s default silently fails if it already exists.
-        if ! tmux has-session -t default; then
+        if ! tmux -L main has-session -t default; then
 		_zlog "tmux: no default session found (if branch, no-op)"
 	else
 		# Create the default session that all our windows will be in...
 		_zlog "tmux: default session found, attempting new-session -d -s default"
-		tmux new-session -d -s default -n h "tail -f ~/.tmux-help" \; setw remain-on-exit\; send-keys C-c
+		tmux -L main new-session -d -s default -n h "tail -f ~/.tmux-help" \; setw remain-on-exit\; send-keys C-c
 		_zlog "tmux: new-session command returned"
         fi
 	# Reap any unamed sessions which don't have anything attached
 	_zlog "tmux: reaping unnamed sessions..."
-	for session in `tmux list-sessions | grep -v attached | grep '^[0-9]*:' | sed -e's/:.*//'`; do
+	for session in `tmux -L main list-sessions | grep -v attached | grep '^[0-9]*:' | sed -e's/:.*//'`; do
 		_zlog "tmux: killing session $session"
-		tmux kill-session -t $session;
+		tmux -L main kill-session -t $session;
 	done
 	# Start a new window.
 	_zlog "=== zprofile end (exec tmux) ==="
-	exec tmux new-session -t default\; new-window
+	exec tmux -L main new-session -t default\; new-window
 else
 	_zlog "tmux: NOT starting (conditions not met)"
         echo "Not starting tmux!"
