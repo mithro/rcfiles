@@ -465,6 +465,18 @@ function tmux_persistence {
 	# disable) is required to keep it from starting at boot.
 	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user mask ssh-agent.socket || true
 
+	# Make the local agent the SINGLE session-wide ssh-agent: point SSH_AUTH_SOCK
+	# at local.sock for the whole user session (GUI / kitty / bare shells), and
+	# mask gcr's ssh-agent so it neither starts nor hijacks SSH_AUTH_SOCK via its
+	# ExecStartPost set-environment. gnome-keyring secrets/pkcs11 (a separate
+	# daemon) are untouched. Keys are added manually (ssh-add) into local.sock;
+	# gcr's GUI auto-unlock no longer applies.
+	mkdir -p ~/.config/environment.d
+	ln -sf "$RCFILES/systemd/environment.d/10-ssh-agent-local-sock.conf" \
+		~/.config/environment.d/10-ssh-agent-local-sock.conf
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user mask \
+		gcr-ssh-agent.socket gcr-ssh-agent.service || true
+
 	# Enable tmux.service but do NOT start it now: an existing tmux server may
 	# hold the default socket. It activates cleanly at the next boot/login.
 	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable tmux.service || true
