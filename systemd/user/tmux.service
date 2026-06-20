@@ -9,6 +9,9 @@ Documentation=man:tmux(1)
 # too when present (servers). Wants= is soft, so the mux unit being absent on
 # laptops/desktops is fine. The concrete socket is chosen per host by the
 # ~/.ssh/agent/front.sock symlink (set in setup.sh tmux_persistence).
+# NB: the mux is only a soft Wants= (it's absent on laptops), so on a server a
+# mux failure won't fail tmux.service — front.sock -> mux.sock would dangle and
+# panes would get a broken SSH_AUTH_SOCK until the mux is back up.
 Requires=ssh-agent.service
 Wants=ross-williams-ssh-agent-mux.service
 After=ssh-agent.service ross-williams-ssh-agent-mux.service
