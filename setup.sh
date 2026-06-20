@@ -483,7 +483,7 @@ function tmux_persistence {
 	# explicitly here.
 	ln -sf "$RCFILES/tmux/tmux-help" ~/.tmux-help
 
-	# tmux.service pins SSH_AUTH_SOCK at a stable per-host "front" socket, so every
+	# tmux-server.service pins SSH_AUTH_SOCK at a stable per-host "front" socket, so every
 	# pane inherits the right agent regardless of bash/zsh login shell. The unit is
 	# identical on every host; only this symlink's target is host-specific, keyed
 	# on the SAME mux-or-not condition that gates ssh_agent_mux:
@@ -497,7 +497,7 @@ function tmux_persistence {
 	fi
 
 	mkdir -p ~/.config/systemd/user
-	ln -sf "$RCFILES/systemd/user/tmux.service" ~/.config/systemd/user/tmux.service
+	ln -sf "$RCFILES/systemd/user/tmux-server.service" ~/.config/systemd/user/tmux-server.service
 	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user daemon-reload || true
 
 	# Ubuntu's stock ssh-agent.socket (openssh_agent) is redundant and would set a
@@ -507,7 +507,7 @@ function tmux_persistence {
 	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user mask ssh-agent.socket || true
 
 	# Make front.sock the SINGLE session-wide ssh-agent: point SSH_AUTH_SOCK at it
-	# for the whole user session (GUI / kitty / bare shells), matching tmux.service
+	# for the whole user session (GUI / kitty / bare shells), matching tmux-server.service
 	# (front.sock -> mux.sock on servers, -> local.sock on laptops, per above — so
 	# the only server/laptop difference stays "is the mux running"). And mask gcr's
 	# ssh-agent so nothing competes / hijacks SSH_AUTH_SOCK via its ExecStartPost
@@ -520,9 +520,13 @@ function tmux_persistence {
 	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user mask \
 		gcr-ssh-agent.socket gcr-ssh-agent.service || true
 
-	# Enable tmux.service but do NOT start it now: an existing tmux server may
-	# hold the default socket. It activates cleanly at the next boot/login.
-	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable tmux.service || true
+	# Enable tmux-server.service but do NOT start it now: an existing tmux server
+	# may hold the default socket. It activates cleanly at the next boot/login.
+	# NB: named tmux-server (NOT tmux.service) to avoid tmux-continuum's
+	# @continuum-boot feature, which hardcodes a unit named "tmux.service" and
+	# (with boot off, our default) runs `systemctl --user disable tmux.service`
+	# on every plugin load — which would otherwise keep disabling this unit.
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable tmux-server.service || true
 }
 
 # Fix permissions

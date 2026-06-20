@@ -10,8 +10,11 @@ Documentation=man:tmux(1)
 # laptops/desktops is fine. The concrete socket is chosen per host by the
 # ~/.ssh/agent/front.sock symlink (set in setup.sh tmux_persistence).
 # NB: the mux is only a soft Wants= (it's absent on laptops), so on a server a
-# mux failure won't fail tmux.service — front.sock -> mux.sock would dangle and
-# panes would get a broken SSH_AUTH_SOCK until the mux is back up.
+# mux failure won't fail tmux-server.service — front.sock -> mux.sock would dangle
+# and panes would get a broken SSH_AUTH_SOCK until the mux is back up.
+# NB: deliberately NOT named tmux.service — tmux-continuum's @continuum-boot
+# feature hardcodes a unit "tmux.service" and (boot off, our default) disables it
+# on every plugin load, which would otherwise clobber this unit.
 Requires=ssh-agent.service
 Wants=ross-williams-ssh-agent-mux.service
 After=ssh-agent.service ross-williams-ssh-agent-mux.service
