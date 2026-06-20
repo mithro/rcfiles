@@ -1,0 +1,30 @@
+# ── Plugins (loaded LAST via linkit postfix) ──────────────────────────
+# setup.sh linkit() appends this file AFTER the base config and all
+# host-specific parts, so the run-shell loader below runs last and
+# continuum wraps the FINAL status-right (incl. host overrides) with its
+# autosave hook. continuum prepends #(continuum_save.sh) to status-right
+# ONCE at load; if a host status-right set ran after the loader it would
+# silently drop autosave -- hence loading here, last. See docs spec section 4.
+#
+# TPM is vendored as a git submodule at ~/rcfiles/tmux/plugins/tpm
+# (pinned; updated via git, not prefix+U). Managed plugins clone OUTSIDE
+# the repo into ~/.tmux/plugins/.
+#   prefix+I install   prefix+U update
+#   prefix+Ctrl-s save (resurrect)   prefix+Ctrl-r restore
+# Restore stays MANUAL: @continuum-restore is deliberately unset.
+set -g @plugin 'tmux-plugins/tmux-resurrect'
+set -g @plugin 'tmux-plugins/tmux-continuum'
+
+# Save pane scrollback contents...
+set -g @resurrect-capture-pane-contents 'on'
+# ...and relaunch these on restore, plus resurrect's conservative
+# defaults (vi vim nvim emacs man less more tail top htop).
+set -g @resurrect-processes 'ssh mosh-client claude'
+
+set -g @continuum-save-interval '15'
+
+set-environment -g TMUX_PLUGIN_MANAGER_PATH '~/.tmux/plugins/'
+
+# Guard so a host without the submodule still gets a working plain tmux.
+if-shell "test -x ~/rcfiles/tmux/plugins/tpm/tpm" \
+    "run-shell ~/rcfiles/tmux/plugins/tpm/tpm"

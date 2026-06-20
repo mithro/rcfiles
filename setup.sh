@@ -79,12 +79,26 @@ function linkit {
 		# Generate a new file
 		# FIXME: Check we are not overriding any local changes!
 		TMP=~/.$F.tmp
+		# BASE_DOMAIN/DOMAIN/HOSTNAME can expand to the same suffix (e.g.
+		# BASE_DOMAIN == DOMAIN == mithis.com); append each part file once.
+		SEEN_PARTS=" "
 		for FILE_PART in "$FP-$BASE_DOMAIN" "$FP-$DOMAIN" "$FP-$HOSTNAME"; do
+			case "$SEEN_PARTS" in
+				*" $FILE_PART "*) continue ;;
+			esac
+			SEEN_PARTS="$SEEN_PARTS$FILE_PART "
 			if [ -f $FILE_PART ]; then
 				echo $FILE_PART "->" ~/.$F
 				cat $FILE_PART >> $TMP
 			fi
 		done
+		# Optional postfix: appended LAST, after host-specific parts (e.g.
+		# config that must come after host overrides, like a plugin loader
+		# that reads the final status-right). See docs spec section 4.
+		if [ -f "$FP-postfix" ]; then
+			echo "$FP-postfix" "->" ~/.$F
+			cat "$FP-postfix" >> $TMP
+		fi
 		echo -n $FP "->" ~/.$F
 		if [ -f $TMP ]; then
 			echo " (generated)"
@@ -269,6 +283,26 @@ function pkgs {
 	fi
 }
 
+function tmux_plugins {
+	local TPM_INSTALL="$RCFILES/tmux/plugins/tpm/bin/install_plugins"
+	if [ ! -x "$TPM_INSTALL" ]; then
+		echo "Warning: tpm submodule missing; skipping tmux plugin install" >&2
+		return 0
+	fi
+
+	# If a tmux server is already running it may predate the plugin
+	# config; re-source so TMUX_PLUGIN_MANAGER_PATH is set on the server
+	# BEFORE installing. Otherwise tpm falls back to its own parent dir
+	# and clones plugins INSIDE this repo. Errors (e.g. no server
+	# running) are expected and non-fatal.
+	tmux source-file ~/.tmux.conf || true
+
+	# Headless install of @plugin entries into ~/.tmux/plugins/.
+	# Needs network; failure is non-fatal -- install later with prefix+I.
+	"$TPM_INSTALL" \
+		|| echo "Warning: tmux plugin install failed (no network?)" >&2
+}
+
 function crontab {
 	echo "Setting up crontab"
 }
@@ -437,32 +471,39 @@ function claude {
 }
 
 function tmux_persistence {
-	# Desktop only. Make the tmux server and its ssh-agent survive a Wayland/
-	# compositor crash and X/Wayland logout by running them as lingering systemd
-	# --user units instead of as children of the terminal that launched them.
+	# All hosts. Run the tmux server (and the ssh-agent it fronts) as lingering
+	# systemd --user units so they survive any login/logout, SSH disconnect, or
+	# Wayland/compositor crash — instead of as children of the terminal/SSH
+	# session that launched them. (A session-scoped tmux server is killed when
+	# that login session's scope is torn down on logout, regardless of linger.)
 	# See docs/plans/2026-06-03-tmux-ssh-agent-persistence.md
-	if [ $SERVER -eq 1 ]; then
-		return 0
-	fi
 
 	# Window 0 of the default tmux session tails this. linkit skips it (the
 	# hyphen in the name collides with the host-variant convention), so link it
 	# explicitly here.
 	ln -sf "$RCFILES/tmux/tmux-help" ~/.tmux-help
 
-	# tmux server as its own unit, depending on ssh-agent.service (installed for
-	# all hosts by ssh_agent). It pins SSH_AUTH_SOCK at the local agent's stable
-	# socket (~/.ssh/agent/local.sock) — the SAME agent ssh/bin/ssh-add writes
-	# to — so every pane inherits it regardless of bash/zsh login shell, with no
-	# ssh-agent-mux on this host. (Lingering is set up by ssh_agent.)
+	# tmux.service pins SSH_AUTH_SOCK at a stable per-host "front" socket, so every
+	# pane inherits the right agent regardless of bash/zsh login shell. The unit is
+	# identical on every host; only this symlink's target is host-specific, keyed
+	# on the SAME mux-or-not condition that gates ssh_agent_mux:
+	#   - servers (ssh-agent-mux present): front -> mux.sock   (local + forwarded)
+	#   - laptops/desktops (no mux):       front -> local.sock (local agent only)
+	mkdir -p ~/.ssh/agent
+	if [ $SERVER -eq 1 ]; then
+		ln -sf mux.sock ~/.ssh/agent/front.sock
+	else
+		ln -sf local.sock ~/.ssh/agent/front.sock
+	fi
+
 	mkdir -p ~/.config/systemd/user
 	ln -sf "$RCFILES/systemd/user/tmux.service" ~/.config/systemd/user/tmux.service
 	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user daemon-reload || true
 
-	# Ubuntu's stock ssh-agent.socket (openssh_agent) is redundant here and would
-	# set a competing SSH_AUTH_SOCK; mask it so the local agent (local.sock) is the
-	# only ssh-agent on this host. It is enabled at global scope, so mask (not just
-	# disable) is required to keep it from starting at boot.
+	# Ubuntu's stock ssh-agent.socket (openssh_agent) is redundant and would set a
+	# competing SSH_AUTH_SOCK; mask it so our agent stack (local agent, plus the
+	# mux on servers) is the only ssh-agent. It is enabled at global scope, so mask
+	# (not just disable) is required to keep it from starting at boot.
 	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user mask ssh-agent.socket || true
 
 	# Make the local agent the SINGLE session-wide ssh-agent: point SSH_AUTH_SOCK
@@ -500,6 +541,8 @@ linkit tmux
 linkit vim
 
 pkgs
+
+tmux_plugins
 
 bash_completions
 ack
