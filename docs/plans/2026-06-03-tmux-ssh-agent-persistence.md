@@ -5,6 +5,8 @@
 `ssh-agent.service` + session-wide `SSH_AUTH_SOCK=front.sock` + gcr masked. **The only
 server↔laptop difference is whether `ssh-agent-mux` runs** (`front.sock` → `mux.sock` vs
 `local.sock`). · **Living document.**
+
+> **2026-06-20 rename:** the persistence unit is now **`tmux-server.service`** (was `tmux.service`). tmux-continuum's `@continuum-boot` feature hardcodes a unit named `tmux.service` and, with boot off (its default, and ours), runs `systemctl --user disable tmux.service` on every plugin load — which silently disabled our unit. Renaming sidesteps the collision. Mentions of `tmux.service` below predate this and refer to the unit now called `tmux-server.service`.
 **Machine:** the laptop (x1c, Ubuntu 26.04, systemd 259, tmux 3.6, UID 1000, GNOME/Wayland).
 **Scope chosen:** survive *compositor crash* + *logout/login*. **Not** reboot. From-now-on
 (no in-place rescue of today's 3 running sessions).
