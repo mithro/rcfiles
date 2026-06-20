@@ -1,8 +1,9 @@
 # Plan: tmux + ssh-agent that survive a Wayland crash / X logout
 
-**Status:** MERGED WITH UPSTREAM (M2), 2026-06-06 — laptop = shared `ssh-agent.service` started
-by `tmux.service` (no mux); servers = `ssh-agent` + `ssh-agent-mux`. Staged + reboot-ready;
-activates at next reboot. Push pending. See **Phase 3** below. · **Living document.**
+**Status:** LIVE — M2 activated at the 2026-06-20 reboot; PUSHED 2026-06-20. Laptop = shared
+`ssh-agent.service` (`local.sock`) started by `tmux.service`, now the **single session-wide
+agent** (gcr's ssh-agent masked — Phase 4); servers = `ssh-agent` + `ssh-agent-mux`. · **Living
+document.**
 **Machine:** the laptop (x1c, Ubuntu 26.04, systemd 259, tmux 3.6, UID 1000, GNOME/Wayland).
 **Scope chosen:** survive *compositor crash* + *logout/login*. **Not** reboot. From-now-on
 (no in-place rescue of today's 3 running sessions).
@@ -135,6 +136,30 @@ socket masked; `tmux.service` requires it + pins `local.sock`; no mux; linger on
 into rcfiles. The CURRENT session still runs on `openssh_agent` (pid 2454, undisturbed); **M2
 activates at the next reboot.** After that reboot, `ssh-add ~/.ssh/keys/new_misc_key` once (via
 the `ssh/bin/ssh-add` wrapper → `local.sock`).
+
+### Phase 4 — 2026-06-20: one session-wide agent (gcr's ssh-agent disabled)
+
+(M2 was verified live right after the 2026-06-20 reboot — tmux server in the `tmux.service`
+cgroup, panes on `local.sock`.) Then, by request, `local.sock` became the **single ssh-agent for
+the whole desktop session**, not just tmux panes. Previously bare kitty windows inherited gcr's
+agent (`/run/user/1000/gcr/ssh` — a different key set) because M2 pinned the agent *only* inside
+`tmux.service`.
+
+- `systemd/environment.d/10-ssh-agent-local-sock.conf` sets
+  `SSH_AUTH_SOCK=${HOME}/.ssh/agent/local.sock` for the user manager → GUI, kitty, bare shells,
+  tmux. Symlinked by `tmux_persistence` (`SERVER=0`).
+- **gcr's ssh-agent masked** (`gcr-ssh-agent.socket` + `.service`); its
+  `ExecStartPost … set-environment SSH_AUTH_SOCK=…/gcr/ssh` was the session hijacker.
+  gnome-keyring secrets/pkcs11 (a *separate* daemon, `--components=pkcs11,secrets`) untouched.
+- **Consequence:** no GUI auto-unlock — every key is `ssh-add`ed into `local.sock` manually. The
+  two ED25519 keys gcr used to auto-load are real files: `~/.ssh/kindle_ed25519` (no passphrase)
+  and `~/.ssh/ansible_ed25519` (passphrase).
+- **Live:** manager env set to `local.sock` + masks in place; existing bare terminals stay on gcr
+  until reboot; **uniform at the next reboot.** `local.sock` currently holds `new_misc_key` +
+  `kindle` (add the third with `ssh-add ~/.ssh/ansible_ed25519`).
+- **Open follow-up:** whether to auto-load the passphrase-less keys at boot (currently no
+  auto-load → `ssh-add` per boot). Servers unaffected (`SERVER=0` gate; they keep zsh + mux, no
+  gcr).
 
 ---
 
