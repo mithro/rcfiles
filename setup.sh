@@ -379,6 +379,30 @@ function ssh_agent_mux {
 		|| echo "Warning: systemctl enable failed" >&2
 }
 
+function clipboard_over_ssh {
+	# Install clipboard-over-ssh from cached binary in repo
+	local ARCH
+	ARCH=$(dpkg --print-architecture)
+	local CACHED_BIN="$RCFILES/ssh/bin/clipboard-over-ssh-linux-${ARCH}"
+
+	if [ ! -f "$CACHED_BIN" ]; then
+		echo "Warning: No cached clipboard-over-ssh binary for ${ARCH}, skipping"
+		echo "To add support: $RCFILES/ssh/bin/update-clipboard-over-ssh"
+		return 0
+	fi
+
+	cp "$CACHED_BIN" ~/bin/clipboard-over-ssh
+	chmod 755 ~/bin/clipboard-over-ssh
+
+	if [ $SERVER -eq 1 ]; then
+		# Remote/server: install xclip/wl-paste symlinks
+		~/bin/clipboard-over-ssh install-remote
+	else
+		# Desktop/local: install systemd socket-activated server
+		~/bin/clipboard-over-ssh install-local
+	fi
+}
+
 function claude {
 	DOT_CLAUDE_DIR=~/github/mithro/dot-claude
 
@@ -471,6 +495,7 @@ gh
 uv_install
 ssh_agent
 ssh_agent_mux
+clipboard_over_ssh
 ssh
 claude
 tmux_persistence

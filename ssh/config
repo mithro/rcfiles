@@ -8,7 +8,9 @@ Host *
 	# Check for sshfp keys in DNS
 	VerifyHostKeyDNS yes
 	# Use a control channel, use -S none to disable.
-	ControlPath ~/.ssh/tmp/master-%j-%r@%h:%p
+	# TODO: Restore %j once system is upgraded to OpenSSH 9.6+
+	# ControlPath ~/.ssh/tmp/master-%j-%r@%h:%p
+	ControlPath ~/.ssh/tmp/master-%r@%h:%p
 	ControlMaster auto
 	# Keep those connections alive!
 	TCPKeepAlive yes
@@ -18,9 +20,10 @@ Host *
 	HostkeyAlgorithms +ssh-rsa
 
 
-Match exec "test -n '%j'"
-	UserKnownHostsFile ~/.ssh/known_hosts.%j
-	StrictHostKeyChecking accept-new
+# TODO: Restore once system is upgraded to OpenSSH 9.6+ (%j support)
+# Match exec "test -n '%j'"
+# 	UserKnownHostsFile ~/.ssh/known_hosts.%j
+# 	StrictHostKeyChecking accept-new
 
 Include ~/.ssh/config_extra
 
@@ -121,6 +124,7 @@ Host *.mithis.com
 	User tim
 	IdentityFile ~/.ssh/keys/new_misc_key
 	ForwardAgent yes
+	# clipboard-over-ssh: forward clipboard socket back to local machine
 	RemoteForward ${HOME}/.ssh/clipboard.sock ${HOME}/.ssh/clipboard-over-ssh.sock
 	StreamLocalBindUnlink yes
 
