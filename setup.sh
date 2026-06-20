@@ -92,6 +92,13 @@ function linkit {
 				cat $FILE_PART >> $TMP
 			fi
 		done
+		# Optional postfix: appended LAST, after host-specific parts (e.g.
+		# config that must come after host overrides, like a plugin loader
+		# that reads the final status-right). See docs spec section 4.
+		if [ -f "$FP-postfix" ]; then
+			echo "$FP-postfix" "->" ~/.$F
+			cat "$FP-postfix" >> $TMP
+		fi
 		echo -n $FP "->" ~/.$F
 		if [ -f $TMP ]; then
 			echo " (generated)"
