@@ -19,7 +19,7 @@ All development, edits, and commits happen **here** — never in the base worktr
 
 **Path rules (important — two kinds of `~/rcfiles` appear in this plan):**
 - In *shell commands*, use `$WORKTREE`. Anywhere an earlier draft said `~/rcfiles`/`cd ~/rcfiles`, it means the worktree. (`~/rcfiles` is a symlink to the *base* worktree; running build commands there would violate the isolation rule.)
-- Inside *committed file contents* — the `tmux/tmux.conf` plugin block (its comments, `set-environment … '~/.tmux/plugins/'`, and the `run-shell ~/rcfiles/tmux/plugins/tpm/tpm` + `if-shell` guard) — the literal `~`/`~/rcfiles` paths are the **production deploy paths** and are correct as written. Do **not** rewrite them to `$WORKTREE`.
+- Inside *committed file contents* — the `tmux/tmux.conf-postfix` plugin block (its comments, `set-environment … '~/.tmux/plugins/'`, and the `run-shell ~/rcfiles/tmux/plugins/tpm/tpm` + `if-shell` guard) — the literal `~`/`~/rcfiles` paths are the **production deploy paths** and are correct as written. Do **not** rewrite them to `$WORKTREE`.
 - The worktree checked out a pristine `b33062d`, so `setup.sh` here has **no** uncommitted edits (the base worktree's `claude()`/`git*` changes are absent). Still `git add` specific paths, never `git add -A`.
 
 **Live deployment is deferred to Task 7.** Tasks 1–6 are repo changes plus *hermetic* verification confined to `$WORKTREE/tmp` — they never touch `~/.tmux.conf`, the running tmux server, or `~/.tmux/plugins`. The on-machine deploy + first real save run only after the branch is integrated, against `~/rcfiles`.
@@ -204,62 +204,143 @@ cd "$WORKTREE" && git add .gitmodules tmux/plugins/tpm .github/workflows/quality
 
 ---
 
-### Task 3: Add plugin block to tmux.conf
+### Task 2.5: Add linkit postfix support (TDD)
 
-**Files:**
-- Modify: `tmux/tmux.conf` (append at end, after the `status-right` line)
+`linkit()` appends host-specific parts (`<base>-$BASE_DOMAIN`, `-$DOMAIN`, `-$HOSTNAME`) after the base file. Add an optional `<base>-postfix` file appended **last**, after all host parts, so the generated order is base → host parts → postfix. This is what lets the TPM loader run after host `status-right` overrides (spec §4; verified this turn: a `run-shell` loader runs synchronously during parse, so a loader in the base file loads *before* the appended host parts, and continuum's one-shot `status-right` hook is then clobbered by the host override).
 
-- [ ] **Step 1: Append the plugin block**
+**Files:** Modify `setup.sh` (`linkit()`); Test: `tmp/test_linkit_postfix.py` (gitignored tmp/, uncommitted).
 
-Append to `$WORKTREE/tmux/tmux.conf` (keep this the last block in the base file). The literal `~/rcfiles` and `~/.tmux/plugins/` paths *inside* this block are the production deploy paths — write them verbatim, do NOT substitute `$WORKTREE`:
+- [ ] **Step 1: Write the failing test** — `$WORKTREE/tmp/test_linkit_postfix.py`:
+
+```python
+#!/usr/bin/env python3
+"""linkit() must append <base>-postfix LAST, after host-specific parts."""
+
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SETUP_SH = REPO_ROOT / "setup.sh"
+TMP_ROOT = REPO_ROOT / "tmp"
+
+
+def main() -> int:
+    match = re.search(r"^function linkit \{.*?^\}", SETUP_SH.read_text(), re.M | re.S)
+    if not match:
+        print("FAIL: could not extract linkit()")
+        return 1
+    with tempfile.TemporaryDirectory(dir=TMP_ROOT) as d:
+        home = Path(d) / "home"
+        cfg = Path(d) / "rcfiles" / "tmux"
+        home.mkdir()
+        cfg.mkdir(parents=True)
+        (cfg / "tmux.conf").write_text("BASE\n")
+        (cfg / "tmux.conf-mithis.com").write_text("HOST\n")
+        (cfg / "tmux.conf-postfix").write_text("POSTFIX\n")
+        script = "\n".join([
+            f"HOME={home}", f"RCFILES={cfg.parent}",
+            "BASE_DOMAIN=mithis.com", "DOMAIN=mithis.com",
+            "HOSTNAME=desktop.mithis.com", match.group(0), "linkit tmux",
+        ])
+        subprocess.run(["bash", "-c", script], check=True)
+        out = (home / ".tmux.conf").read_text().split()
+    print("order:", out)
+    ok = out == ["BASE", "HOST", "POSTFIX"]
+    print("PASS" if ok else "FAIL: expected ['BASE','HOST','POSTFIX']")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+- [ ] **Step 2: Run, confirm FAIL** — `cd "$WORKTREE" && uv run python tmp/test_linkit_postfix.py`. Before the fix the postfix file is ignored → order `['BASE', 'HOST']`, exit 1.
+
+- [ ] **Step 3: Implement.** In `linkit()`, AFTER the host-suffix `for` loop and BEFORE the `if [ -f $TMP ]` write, append the optional postfix (TAB-indented):
+
+```bash
+		# Optional postfix: appended LAST, after host-specific parts (e.g.
+		# config that must come after host overrides, like a plugin loader
+		# that reads the final status-right). See docs spec section 4.
+		if [ -f "$FP-postfix" ]; then
+			echo "$FP-postfix" "->" ~/.$F
+			cat "$FP-postfix" >> $TMP
+		fi
+```
+
+- [ ] **Step 4: Run, confirm PASS** — order `['BASE', 'HOST', 'POSTFIX']`, exit 0.
+
+- [ ] **Step 5: Lint** — `bash -n "$WORKTREE/setup.sh" && shellcheck -S warning "$WORKTREE/setup.sh"` clean (confirm any finding pre-exists on master).
+
+- [ ] **Step 6: Commit:**
+```bash
+cd "$WORKTREE" && git add setup.sh && git commit -m "setup.sh: Add linkit postfix file support
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
+```
+
+---
+
+### Task 3: Put the plugin block in tmux.conf-postfix (not base)
+
+The TPM/resurrect/continuum block must load AFTER host `status-right` overrides so continuum's autosave hook survives (spec §4). It therefore lives in `tmux/tmux.conf-postfix` (appended last by linkit, Task 2.5), NOT the base file.
+
+**Prior state:** commit `9d9f0a0` appended this block to the base `tmux/tmux.conf`. This task MOVES it: delete it from the base, create `tmux/tmux.conf-postfix` with it.
+
+**Files:** Modify `tmux/tmux.conf` (remove the appended block); Create `tmux/tmux.conf-postfix`.
+
+- [ ] **Step 1: Remove the block from base.** In `$WORKTREE/tmux/tmux.conf`, delete the entire `# ── Plugins ──…` block (the leading blank line through the final `run-shell …` line) so the base file ends again at the `status-right` line.
+
+- [ ] **Step 2: Create `$WORKTREE/tmux/tmux.conf-postfix`** with the content below. Literal `~/rcfiles` / `~/.tmux/plugins/` are production paths — verbatim, do NOT substitute `$WORKTREE`:
 
 ```tmux
-
-# ── Plugins ──────────────────────────────────────────────────────────
-# TPM (tmux plugin manager) is vendored as a git submodule at
-# ~/rcfiles/tmux/plugins/tpm (pinned; updated via git, not prefix+U).
-# The plugins TPM manages are cloned OUTSIDE the repo into
-# ~/.tmux/plugins/ (TMUX_PLUGIN_MANAGER_PATH below).
-#   prefix+I = install plugins   prefix+U = update plugins
+# ── Plugins (loaded LAST via linkit postfix) ──────────────────────────
+# setup.sh linkit() appends this file AFTER the base config and all
+# host-specific parts, so the run-shell loader below runs last and
+# continuum wraps the FINAL status-right (incl. host overrides) with its
+# autosave hook. continuum prepends #(continuum_save.sh) to status-right
+# ONCE at load; if a host status-right set ran after the loader it would
+# silently drop autosave -- hence loading here, last. See docs spec §4.
 #
-# tmux-resurrect: prefix+Ctrl-s = save, prefix+Ctrl-r = restore.
-# tmux-continuum: autosaves every 15 min. Restore stays MANUAL --
-# @continuum-restore is deliberately not set, so a fresh server never
-# auto-loads stale state.
+# TPM is vendored as a git submodule at ~/rcfiles/tmux/plugins/tpm
+# (pinned; updated via git, not prefix+U). Managed plugins clone OUTSIDE
+# the repo into ~/.tmux/plugins/.
+#   prefix+I install   prefix+U update
+#   prefix+Ctrl-s save (resurrect)   prefix+Ctrl-r restore
+# Restore stays MANUAL: @continuum-restore is deliberately unset.
 set -g @plugin 'tmux-plugins/tmux-resurrect'
 set -g @plugin 'tmux-plugins/tmux-continuum'
 
 # Save pane scrollback contents...
 set -g @resurrect-capture-pane-contents 'on'
-# ...and relaunch these programs on restore, in addition to resurrect's
-# conservative defaults (vi vim nvim emacs man less more tail top htop).
+# ...and relaunch these on restore, plus resurrect's conservative
+# defaults (vi vim nvim emacs man less more tail top htop).
 set -g @resurrect-processes 'ssh mosh-client claude'
 
 set -g @continuum-save-interval '15'
 
 set-environment -g TMUX_PLUGIN_MANAGER_PATH '~/.tmux/plugins/'
 
-# Keep this run-shell as the LAST line of this base file. Host-specific
-# parts appended after it by setup.sh linkit() may safely override
-# display options (e.g. status-right): run-shell jobs execute only
-# after the whole generated config is parsed, so continuum wraps the
-# FINAL status-right with its autosave hook. Host parts must NOT set
-# @resurrect-*/@continuum-* options (too late by then). If autosave
-# ever stops, check: tmux show -g status-right  (should contain
-# continuum_save.sh).
+# Guard so a host without the submodule still gets a working plain tmux.
 if-shell "test -x ~/rcfiles/tmux/plugins/tpm/tpm" \
     "run-shell ~/rcfiles/tmux/plugins/tpm/tpm"
 ```
 
-- [ ] **Step 2: Syntax-check the config on an isolated server**
-
-Run: `tmux -L conftest -f "$WORKTREE/tmux/tmux.conf" new-session -d \; kill-server`
-Expected: no output, exit 0. (Plugins aren't installed and the `if-shell` guard is false from a worktree — that's fine; this only checks the base file parses. The `-L conftest` socket keeps it away from your real running server. Full plugin behaviour is verified hermetically in Task 5.)
-
-- [ ] **Step 3: Commit**
-
+- [ ] **Step 3: Syntax-check the generated concatenation parses** (base + host part + postfix), on an isolated socket:
 ```bash
-cd "$WORKTREE" && git add tmux/tmux.conf && git commit -m "tmux: Add TPM with resurrect/continuum session persistence"
+cat "$WORKTREE/tmux/tmux.conf" "$WORKTREE/tmux/tmux.conf-mithis.com" "$WORKTREE/tmux/tmux.conf-postfix" > "$WORKTREE/tmp/gen.conf"
+tmux -L conftest -f "$WORKTREE/tmp/gen.conf" new-session -d \; kill-server
+```
+Expected: exit 0, no errors. (The `if-shell` guard is false from a worktree — fine; this checks parsing. Real ordering/plugin behaviour is verified in Task 5.) Then `rm "$WORKTREE/tmp/gen.conf"`.
+
+- [ ] **Step 4: Commit** (both files — the move):
+```bash
+cd "$WORKTREE" && git add tmux/tmux.conf tmux/tmux.conf-postfix && git commit -m "tmux: Move plugin block to tmux.conf-postfix so loader runs after host parts
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
 ---
@@ -340,7 +421,7 @@ run-shell "$WORKTREE/tmux/plugins/tpm/tpm"
 EOF
 ```
 
-`@resurrect-dir` is set ONLY here so saves land in the worktree, never in the live `~/.local/share/tmux/resurrect`; it is intentionally absent from the production config (Task 3).
+`@resurrect-dir` is set ONLY here so saves land in the worktree, never in the live `~/.local/share/tmux/resurrect`; it is intentionally absent from the production block in `tmux.conf-postfix`.
 
 - [ ] **Step 2: Install plugins into the worktree-local path**
 
@@ -376,6 +457,20 @@ Expected: `install` session restored with the 2-pane window; `RESTORE-CANARY` pr
 Run: `tmux -L tpmtest display-message -p -t install:0.1 '#{pane_current_command}'`
 Expected: `top` (whitelisted-program relaunch works — `top` is on resurrect's default list).
 
+- [ ] **Step 3.5: Verify postfix ordering preserves the autosave hook (stand-in)**
+
+continuum's real hook can't be reliably observed on this multi-server box (continuum's `another_tmux_server_running` guard skips the interpolation when another tmux server — your live session — is running), so prove the ORDERING with a continuum stand-in that prepends to `status-right` exactly as continuum does. Reproduce the production concatenation order (base `status-right` → host `status-right` → postfix loader):
+
+```bash
+printf '%s\n' '#!/usr/bin/env bash' 'cur="$(tmux show-options -gv status-right)"' 'tmux set-option -g status-right "HOOK[$cur]"' > "$WORKTREE/tmp/fake.sh"
+printf '%s\n' "set -g status-right 'BASE'" "set -g status-right 'HOST'" "run-shell \"bash $WORKTREE/tmp/fake.sh\"" > "$WORKTREE/tmp/ord.conf"
+tmux -L ordtest -f "$WORKTREE/tmp/ord.conf" new-session -d -s s
+tmux -L ordtest show-options -g status-right
+tmux -L ordtest kill-server
+rm -f "$WORKTREE/tmp/fake.sh" "$WORKTREE/tmp/ord.conf"
+```
+Expected: `status-right HOOK[HOST]` — the loader (last, like the postfix) wrapped the FINAL host value. (With the loader BEFORE the host set, the result is `HOST` — hook lost; that was the bug. This was already demonstrated during planning.)
+
 - [ ] **Step 4: Record findings**
 
 Note for the spec's open questions and for Task 7: observed scrollback-capture depth, and whether `top` relaunched cleanly. `ssh`/`mosh-client`/`claude` matching needs real panes — defer to Task 7 live observation.
@@ -402,7 +497,7 @@ rm -rf "$WORKTREE/tmp/plugins" "$WORKTREE/tmp/resurrect" "$WORKTREE/tmp/test.tmu
 In Directory Structure, change the tmux line to:
 
 ```markdown
-- `tmux/`: Tmux configuration with hostname-specific overrides; TPM vendored at `tmux/plugins/tpm` (plugins clone to `~/.tmux/plugins/`)
+- `tmux/`: Tmux configuration with hostname-specific overrides; TPM vendored at `tmux/plugins/tpm` (plugins clone to `~/.tmux/plugins/`); plugin block in `tmux/tmux.conf-postfix` (appended by linkit after host parts)
 ```
 
 In Key Features, after the SSH section, add:
@@ -412,7 +507,8 @@ In Key Features, after the SSH section, add:
 - TPM (tmux plugin manager) is a pinned git submodule at `tmux/plugins/tpm`; managed plugins live outside the repo in `~/.tmux/plugins/` via `TMUX_PLUGIN_MANAGER_PATH`
 - tmux-resurrect + tmux-continuum: autosave every 15 minutes, restore is manual (`prefix+Ctrl-r`); `@continuum-restore` deliberately unset
 - Saves capture pane scrollback and relaunch whitelisted programs (defaults plus ssh, mosh-client, claude)
-- `setup.sh` installs plugins headlessly via `tmux_plugins()`; continuum's autosave hook lives in `status-right`, so host parts may override `status-right` but must not set `@`-options
+- The plugin block ships in `tmux/tmux.conf-postfix`, which `linkit` appends after the base config and all host-specific parts; this ordering is what keeps continuum's autosave hook (prepended to `status-right` at load) from being wiped by a host `status-right` override
+- `setup.sh` installs plugins headlessly via `tmux_plugins()`
 ```
 
 - [ ] **Step 2: Update tmux/tmux-help**
@@ -480,7 +576,7 @@ Run: `ls ~/rcfiles/tmux/plugins/` → Expected `tpm` ONLY. If resurrect/continuu
 
 - [ ] **Step 6: Verify ordering + keybindings on the real server**
 
-Run: `tmux show-options -g status-right` → contains BOTH `continuum_save.sh` AND the host `hostname -f | sed ...` string (proves the spec's post-parse ordering claim holds with host overrides).
+Run: `tmux show-options -g status-right` → contains BOTH `continuum_save.sh` AND the host `hostname -f | sed ...` string (proves the postfix loader ran after the host override and continuum wrapped the FINAL status-right — the core fix). If `continuum_save.sh` is ABSENT, autosave is broken: confirm `tmux.conf-postfix` is the LAST content in `~/.tmux.conf` (`tail ~/.tmux.conf`) and that continuum loaded.
 Run: `tmux list-keys -T prefix C-s && tmux list-keys -T prefix C-r` → bound to resurrect `save.sh` / `restore.sh`.
 
 - [ ] **Step 7: First real save + record save dir**

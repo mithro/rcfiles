@@ -84,6 +84,11 @@ Decisions baked into this block:
 - Key bindings are plugin defaults: `prefix+Ctrl-s` save,
   `prefix+Ctrl-r` restore, `prefix+I` install plugins, `prefix+U`
   update plugins.
+- **This block is deployed via `tmux/tmux.conf-postfix`, not the base
+  `tmux.conf`.** linkit appends the postfix after host parts, so the
+  `run-shell` loader runs last and continuum wraps the FINAL
+  `status-right` (see §4). The block's *location* — not a "keep this
+  last" comment — is what guarantees ordering.
 
 ### 3. setup.sh changes
 
@@ -103,19 +108,37 @@ Decisions baked into this block:
   duplication. Fix: dedupe **by path** — skip a part file whose path has
   already been appended (the bug is the same path appearing twice in the
   suffix list). This directly affects the file this project regenerates.
+- **`linkit` postfix support:** add an optional `<base>-postfix` file
+  appended after the host-specific parts (generated order: base → host
+  parts → postfix). Generic feature; used here so the TPM loader in
+  `tmux/tmux.conf-postfix` runs last (see §4).
 
-### 4. Host-override / continuum ordering
+### 4. Host-override / continuum ordering (postfix mechanism)
 
-`linkit` concatenates host parts (`tmux.conf-mithis.com`, …) *after*
-the base file, so `set -g status-right` from a host part lands after
-the `run-shell …/tpm` line in the generated `~/.tmux.conf`. This is
-safe: `run-shell` jobs only execute after the entire config file has
-been parsed, so continuum wraps the host's final `status-right` value
-with its autosave hook. The constraint is load-bearing and silent if
-broken (autosave just stops), so:
+continuum's autosave works by prepending `#(continuum_save.sh)` to
+`status-right` **once, at plugin-load time** (`add_resurrect_save_interpolation`
+in `continuum.tmux`; one-shot global `set-option`, no hook/timer). So
+whatever sets `status-right` LAST wins: if a host part's
+`set -g status-right` runs after the TPM loader, it silently wipes
+continuum's hook and autosave never fires.
 
-- a comment in the base config documents it, and
-- the test plan explicitly verifies autosave on a host *with* overrides.
+Verified empirically on tmux 3.5a (isolated socket, continuum stand-in):
+a `run-shell` loader executes synchronously during config parse, BEFORE
+later lines — so the original assumption ("run-shell runs after the whole
+file is parsed") is FALSE. `linkit` appends host parts after the base
+file, so a loader placed in the base file loads *before* the host
+`status-right` override → hook lost on every `*.mithis.com` host.
+
+**Fix — `linkit` postfix support.** `linkit` gains an optional
+`<base>-postfix` file appended LAST, after all host-specific parts
+(generated order: base → host parts → postfix). The TPM plugin block
+(options + guarded `run-shell` loader) lives in `tmux/tmux.conf-postfix`,
+so in the generated `~/.tmux.conf` the loader runs after the host
+`status-right` override; continuum reads the FINAL `status-right` and its
+hook survives. Host parts stay free to override `status-right`/colours
+exactly as before. This is a generic `linkit` feature (any config may
+have a postfix), not a tmux-specific hack. The test plan verifies
+`status-right` contains `continuum_save.sh` on a host *with* overrides.
 
 ### 5. Testing (on this machine — has overrides, worst case)
 
@@ -123,8 +146,9 @@ broken (autosave just stops), so:
    snippet exactly once (linkit fix verified).
 2. Start a fresh tmux server; `~/.tmux/plugins/` contains resurrect and
    continuum; no error output.
-3. `tmux show -g status-right` shows continuum's wrapper around the
-   host-specific status string (ordering verified).
+3. `tmux show -g status-right` shows continuum's wrapper
+   (`continuum_save.sh`) around the host-specific status string —
+   ordering guaranteed by the postfix file loading after host parts.
 4. Manual save (`prefix+Ctrl-s`) writes a save file under resurrect's
    save directory; after one autosave interval a newer save appears.
 5. Kill the tmux server, restart, `prefix+Ctrl-r`: layout, working
