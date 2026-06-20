@@ -1,9 +1,10 @@
 # Plan: tmux + ssh-agent that survive a Wayland crash / X logout
 
-**Status:** LIVE — M2 activated at the 2026-06-20 reboot; PUSHED 2026-06-20. Laptop = shared
-`ssh-agent.service` (`local.sock`) started by `tmux.service`, now the **single session-wide
-agent** (gcr's ssh-agent masked — Phase 4); servers = `ssh-agent` + `ssh-agent-mux`. · **Living
-document.**
+**Status:** LIVE & MERGED — reconciled with the upstream `front.sock` / all-hosts / TPM design
+(Phase 5, 2026-06-20). **Every host:** persistent `tmux.service` + TPM/resurrect + local
+`ssh-agent.service` + session-wide `SSH_AUTH_SOCK=front.sock` + gcr masked. **The only
+server↔laptop difference is whether `ssh-agent-mux` runs** (`front.sock` → `mux.sock` vs
+`local.sock`). · **Living document.**
 **Machine:** the laptop (x1c, Ubuntu 26.04, systemd 259, tmux 3.6, UID 1000, GNOME/Wayland).
 **Scope chosen:** survive *compositor crash* + *logout/login*. **Not** reboot. From-now-on
 (no in-place rescue of today's 3 running sessions).
@@ -436,3 +437,22 @@ Record PID_before/after and outputs here on execution.
 - **gcr coexistence:** gcr-ssh-agent stays enabled and harmless; we simply stop *pointing* at
   it. If GUI key-unlock is wanted later, decide gcr-vs-dedicated precedence explicitly.
 - **Reboot persistence** of layouts (tmux-resurrect/continuum) — deliberately excluded.
+  *(Superseded — now INCLUDED via TPM/resurrect from the upstream merge, Phase 5.)*
+
+### Phase 5 — 2026-06-20: reconciled with upstream front.sock / all-hosts / TPM (final shape)
+
+Origin had advanced 17 commits (parallel work from another machine) into a more general design,
+merged here:
+- **`front.sock` per-host indirection:** `tmux.service` (now on ALL hosts) pins
+  `SSH_AUTH_SOCK=~/.ssh/agent/front.sock`, a symlink set per host by `tmux_persistence`:
+  → `mux.sock` on servers, → `local.sock` on laptops. One identical unit everywhere.
+- **TPM + resurrect/continuum** session persistence (so reboot persistence is now IN).
+- My Phase-4 session-wide-agent + gcr-mask reconciled onto it: `environment.d` now sets
+  `SSH_AUTH_SOCK=front.sock` (was `local.sock`; file renamed `10-ssh-agent.conf`) so non-tmux /
+  GUI contexts use the SAME per-host agent as tmux; `gcr-ssh-agent` is masked on all hosts.
+
+**Final spec (owner's words): every host runs persistent tmux + TPM/resurrect + a local
+ssh-agent + a session-wide `front.sock` agent + nothing using gcr for ssh. The ONLY server↔laptop
+difference is whether `ssh-agent-mux` runs** — server: `front.sock`→`mux.sock` (local + forwarded
+keys); laptop: `front.sock`→`local.sock` (local only). Keys are `ssh-add`ed manually into the
+local agent (no auto-load). Live now for new processes; fully uniform at the next reboot.
