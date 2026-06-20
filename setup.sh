@@ -284,7 +284,7 @@ function pkgs {
 }
 
 function tmux_plugins {
-	TPM_INSTALL="$RCFILES/tmux/plugins/tpm/bin/install_plugins"
+	local TPM_INSTALL="$RCFILES/tmux/plugins/tpm/bin/install_plugins"
 	if [ ! -x "$TPM_INSTALL" ]; then
 		echo "Warning: tpm submodule missing; skipping tmux plugin install" >&2
 		return 0
