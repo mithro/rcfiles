@@ -1,4 +1,8 @@
 
      Ctrl A a to detact!
+     Ctrl A Ctrl S  save sessions (resurrect; continuum autosaves every 15 min)
+     Ctrl A Ctrl R  restore sessions
+     Ctrl A I       install plugins (tpm)
+     Ctrl A U       update plugins (tpm)
 
 
