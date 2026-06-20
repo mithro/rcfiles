@@ -1,0 +1,4 @@
+# Host-specific overrides for x1c-work (this laptop).
+# setup.sh linkit appends this after tmux/tmux.conf (matched on `hostname -f`),
+# so settings here override the base. Green status bar to distinguish this host.
+set -g status-style bg=green,fg=black
