@@ -1,20 +1,26 @@
 [Unit]
 Description=tmux server (persistent across logout/compositor crash)
 Documentation=man:tmux(1)
-# The local ssh-agent (ssh-agent.service + ssh-agent-start.sh) provides the
-# stable socket ~/.ssh/agent/local.sock. Require it so the agent is up first —
-# this is how the agent is "started by tmux" on a laptop (no ssh-agent-mux here;
-# the mux is a server-only front-end for the same agent).
+# Runs the tmux server as a lingering systemd --user unit so it survives any
+# login/logout, SSH disconnect, or Wayland/compositor crash. (A tmux server
+# started inside a login session lives in that session's scope and is killed
+# when the scope is torn down on logout, regardless of linger.)
+# Pin the agent the server fronts: the local ssh-agent always; the ssh-agent-mux
+# too when present (servers). Wants= is soft, so the mux unit being absent on
+# laptops/desktops is fine. The concrete socket is chosen per host by the
+# ~/.ssh/agent/front.sock symlink (set in setup.sh tmux_persistence).
 Requires=ssh-agent.service
-After=ssh-agent.service
+Wants=ross-williams-ssh-agent-mux.service
+After=ssh-agent.service ross-williams-ssh-agent-mux.service
 
 [Service]
 Type=forking
 # Decisive agent pin: every pane the server forks inherits this (SSH_AUTH_SOCK
-# is deliberately excluded from tmux's update-environment). Points at the local
-# agent's stable socket — the SAME one ssh/bin/ssh-add writes to. Works for bash
-# *and* zsh login shells, since panes inherit it from the server's birth env.
-Environment=SSH_AUTH_SOCK=%h/.ssh/agent/local.sock
+# is deliberately excluded from tmux's update-environment). front.sock is a
+# per-host symlink: -> mux.sock on servers (local + forwarded keys), -> local.sock
+# on laptops (local agent only). Works for bash *and* zsh login shells, since
+# panes inherit it from the server's birth env.
+Environment=SSH_AUTH_SOCK=%h/.ssh/agent/front.sock
 # Start a detached "default" session whose window 0 (tail -f ~/.tmux-help, kept
 # alive by remain-on-exit) stops the server exiting when empty. Mirrors the
 # session ~/.zprofile expects, so a later login just attaches to it.
