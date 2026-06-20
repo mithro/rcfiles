@@ -283,6 +283,26 @@ function pkgs {
 	fi
 }
 
+function tmux_plugins {
+	TPM_INSTALL="$RCFILES/tmux/plugins/tpm/bin/install_plugins"
+	if [ ! -x "$TPM_INSTALL" ]; then
+		echo "Warning: tpm submodule missing; skipping tmux plugin install" >&2
+		return 0
+	fi
+
+	# If a tmux server is already running it may predate the plugin
+	# config; re-source so TMUX_PLUGIN_MANAGER_PATH is set on the server
+	# BEFORE installing. Otherwise tpm falls back to its own parent dir
+	# and clones plugins INSIDE this repo. Errors (e.g. no server
+	# running) are expected and non-fatal.
+	tmux source-file ~/.tmux.conf || true
+
+	# Headless install of @plugin entries into ~/.tmux/plugins/.
+	# Needs network; failure is non-fatal -- install later with prefix+I.
+	"$TPM_INSTALL" \
+		|| echo "Warning: tmux plugin install failed (no network?)" >&2
+}
+
 function crontab {
 	echo "Setting up crontab"
 }
@@ -502,6 +522,8 @@ linkit tmux
 linkit vim
 
 pkgs
+
+tmux_plugins
 
 bash_completions
 ack
