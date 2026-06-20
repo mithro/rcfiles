@@ -471,32 +471,39 @@ function claude {
 }
 
 function tmux_persistence {
-	# Desktop only. Make the tmux server and its ssh-agent survive a Wayland/
-	# compositor crash and X/Wayland logout by running them as lingering systemd
-	# --user units instead of as children of the terminal that launched them.
+	# All hosts. Run the tmux server (and the ssh-agent it fronts) as lingering
+	# systemd --user units so they survive any login/logout, SSH disconnect, or
+	# Wayland/compositor crash — instead of as children of the terminal/SSH
+	# session that launched them. (A session-scoped tmux server is killed when
+	# that login session's scope is torn down on logout, regardless of linger.)
 	# See docs/plans/2026-06-03-tmux-ssh-agent-persistence.md
-	if [ $SERVER -eq 1 ]; then
-		return 0
-	fi
 
 	# Window 0 of the default tmux session tails this. linkit skips it (the
 	# hyphen in the name collides with the host-variant convention), so link it
 	# explicitly here.
 	ln -sf "$RCFILES/tmux/tmux-help" ~/.tmux-help
 
-	# tmux server as its own unit, depending on ssh-agent.service (installed for
-	# all hosts by ssh_agent). It pins SSH_AUTH_SOCK at the local agent's stable
-	# socket (~/.ssh/agent/local.sock) — the SAME agent ssh/bin/ssh-add writes
-	# to — so every pane inherits it regardless of bash/zsh login shell, with no
-	# ssh-agent-mux on this host. (Lingering is set up by ssh_agent.)
+	# tmux.service pins SSH_AUTH_SOCK at a stable per-host "front" socket, so every
+	# pane inherits the right agent regardless of bash/zsh login shell. The unit is
+	# identical on every host; only this symlink's target is host-specific, keyed
+	# on the SAME mux-or-not condition that gates ssh_agent_mux:
+	#   - servers (ssh-agent-mux present): front -> mux.sock   (local + forwarded)
+	#   - laptops/desktops (no mux):       front -> local.sock (local agent only)
+	mkdir -p ~/.ssh/agent
+	if [ $SERVER -eq 1 ]; then
+		ln -sf mux.sock ~/.ssh/agent/front.sock
+	else
+		ln -sf local.sock ~/.ssh/agent/front.sock
+	fi
+
 	mkdir -p ~/.config/systemd/user
 	ln -sf "$RCFILES/systemd/user/tmux.service" ~/.config/systemd/user/tmux.service
 	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user daemon-reload || true
 
-	# Ubuntu's stock ssh-agent.socket (openssh_agent) is redundant here and would
-	# set a competing SSH_AUTH_SOCK; mask it so the local agent (local.sock) is the
-	# only ssh-agent on this host. It is enabled at global scope, so mask (not just
-	# disable) is required to keep it from starting at boot.
+	# Ubuntu's stock ssh-agent.socket (openssh_agent) is redundant and would set a
+	# competing SSH_AUTH_SOCK; mask it so our agent stack (local agent, plus the
+	# mux on servers) is the only ssh-agent. It is enabled at global scope, so mask
+	# (not just disable) is required to keep it from starting at boot.
 	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user mask ssh-agent.socket || true
 
 	# Enable tmux.service but do NOT start it now: an existing tmux server may
