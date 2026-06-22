@@ -150,7 +150,8 @@ def main():
         meta = read_meta(transcript) if transcript else None
         argv = ["claude", "--resume", sid]
     else:
-        transcript, meta, argv = None, None, ["claude"]
+        # no id, or junk that isn't a uuid -> plain claude (resume picker)
+        sid, transcript, meta, argv = "", None, None, ["claude"]
 
     tty = sys.stdout.isatty()
     render(sid, meta, tty)
