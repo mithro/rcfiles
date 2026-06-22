@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""claude-resume <session-id> — confirm, then resume a specific Claude session.
+
+This is the command tmux-resurrect types into each Claude pane on restore
+(rewritten there from a bare `claude` by claude-resume-save-hook). Rather than
+relaunching Claude blindly, it shows *which* conversation this pane was and
+waits for you to confirm — so restoring N panes doesn't stampede N Claude
+processes (and their Playwright MCPs) at once on a box that has OOM'd before.
+
+    Enter    resume this session   (exec `claude --resume <id>`)
+    Ctrl-C   skip — leave a shell in this pane
+
+With no id (or an unrecognised one) it falls back to a plain `claude`.
+
+stdlib only + `#!/usr/bin/env python3` on purpose: this runs at a tmux prompt
+during restore, so it must start instantly with no `uv`/venv/network in play.
+"""
+import glob
+import json
+import os
+import re
+import sys
+
+HOME = os.path.expanduser("~")
+PROJECTS = os.path.join(HOME, ".claude", "projects")
+UUID_RE = re.compile(r"\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z")
+
+
+def munge(path):
+    """Mirror Claude Code's project-dir naming: '/' and '.' both become '-'."""
+    return re.sub(r"[/.]", "-", path)
+
+
+def find_transcript(sid):
+    """~/.claude/projects/<munged-cwd>/<sid>.jsonl — found by glob so we don't
+    have to know which (possibly worktree) directory the session launched in."""
+    hits = glob.glob(os.path.join(PROJECTS, "*", sid + ".jsonl"))
+    return hits[0] if hits else None
+
+
+def read_meta(path):
+    """Pull a short human label + the original launch cwd out of a transcript."""
+    # launch_cwd = first cwd (its munge == the project folder; the dir to resume
+    # from). work_cwd = last cwd (often a worktree where the work happened).
+    meta = {"summary": None, "title": None, "first_user": None,
+            "launch_cwd": None, "work_cwd": None, "branch": None, "last_ts": None}
+    try:
+        with open(path) as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    o = json.loads(line)
+                except ValueError:
+                    continue
+                t = o.get("type")
+                if o.get("cwd"):
+                    if meta["launch_cwd"] is None:
+                        meta["launch_cwd"] = o["cwd"]
+                    meta["work_cwd"] = o["cwd"]
+                if o.get("gitBranch"):
+                    meta["branch"] = o["gitBranch"]
+                if o.get("timestamp") and t in ("user", "assistant"):
+                    meta["last_ts"] = o["timestamp"]
+                if t == "summary" and o.get("summary"):
+                    meta["summary"] = o["summary"]
+                elif t == "ai-title" and o.get("aiTitle"):
+                    meta["title"] = o["aiTitle"]
+                elif t == "custom-title" and o.get("customTitle"):
+                    meta["title"] = o["customTitle"]
+                elif t == "user" and meta["first_user"] is None:
+                    c = o.get("message", {}).get("content")
+                    if isinstance(c, list):
+                        for part in c:
+                            if isinstance(part, dict) and part.get("type") == "text":
+                                meta["first_user"] = part["text"]
+                                break
+                    elif isinstance(c, str) and not c.lstrip().startswith("<"):
+                        meta["first_user"] = c
+    except OSError:
+        pass
+    return meta
+
+
+def label(meta):
+    """Best one-line description: title > rolling summary > first user prompt."""
+    text = meta.get("title") or meta.get("summary") or meta.get("first_user") \
+        or "(no summary found)"
+    text = " ".join(text.split())
+    return text[:200] + ("…" if len(text) > 200 else "")
+
+
+def shorten_home(p):
+    return p.replace(HOME, "~", 1) if p and p.startswith(HOME) else p
+
+
+def render(sid, meta, tty):
+    b = "\033[1m" if tty else ""      # bold
+    d = "\033[2m" if tty else ""      # dim
+    c = "\033[36m" if tty else ""     # cyan
+    r = "\033[0m" if tty else ""
+    out = sys.stdout
+    if not sid:
+        out.write(f"\n{b}Resume Claude{r} {d}(no session id — picker){r}\n")
+        out.write(f"{d}  Enter = open the resume picker · Ctrl-C = shell{r}\n\n")
+        out.flush()
+        return
+    out.write(f"\n{b}Resume Claude session{r}  {c}{sid[:8]}{r}{d}…{r}\n")
+    if meta:
+        loc = shorten_home(meta.get("launch_cwd") or "")
+        if meta.get("branch"):
+            loc = f"{loc}  {d}@ {meta['branch']}{r}" if loc else meta["branch"]
+        if loc:
+            out.write(f"  {loc}\n")
+        work = meta.get("work_cwd")
+        if work and work != meta.get("launch_cwd"):
+            out.write(f"  {d}↳ worktree {shorten_home(work)}{r}\n")
+        out.write(f"  {d}“{r}{label(meta)}{d}”{r}\n")
+        if meta.get("last_ts"):
+            out.write(f"  {d}last active {meta['last_ts']}{r}\n")
+    else:
+        out.write(f"  {d}(transcript not found — will still try to resume){r}\n")
+    out.write(f"{d}  Enter = resume · Ctrl-C = shell{r}\n\n")
+    out.flush()
+
+
+def maybe_chdir(meta, transcript):
+    """Run resume from the dir the session launched in, so claude finds it.
+
+    `claude --resume` is project-scoped: it resolves the id against the project
+    matching the *current* directory's munged name. The transcript's folder name
+    encodes the original launch cwd; cd back to it (when it still exists) instead
+    of trusting wherever resurrect happened to recreate the pane."""
+    cwd = meta.get("launch_cwd")
+    if not (cwd and os.path.isdir(cwd) and transcript):
+        return
+    proj = os.path.basename(os.path.dirname(transcript))
+    if munge(cwd) == proj and os.path.realpath(cwd) != os.path.realpath(os.getcwd()):
+        try:
+            os.chdir(cwd)
+        except OSError:
+            pass
+
+
+def main():
+    sid = sys.argv[1].strip() if len(sys.argv) > 1 else ""
+    if sid and UUID_RE.match(sid):
+        transcript = find_transcript(sid)
+        meta = read_meta(transcript) if transcript else None
+        argv = ["claude", "--resume", sid]
+    else:
+        transcript, meta, argv = None, None, ["claude"]
+
+    tty = sys.stdout.isatty()
+    render(sid, meta, tty)
+
+    if sys.stdin.isatty():
+        try:
+            input()
+        except (KeyboardInterrupt, EOFError):
+            dim = "\033[2m" if tty else ""
+            rst = "\033[0m" if tty else ""
+            sys.stdout.write(f"{dim}↩ skipped — shell ready{rst}\n")
+            return
+
+    if meta:
+        maybe_chdir(meta, transcript)
+
+    try:
+        os.execvp("claude", argv)
+    except FileNotFoundError:
+        sys.stderr.write("claude-resume: `claude` not found on PATH\n")
+        sys.exit(127)
+
+
+if __name__ == "__main__":
+    main()
