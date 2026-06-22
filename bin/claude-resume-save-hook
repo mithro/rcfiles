@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+"""claude-resume-save-hook <resurrect-save-file>
+
+tmux-resurrect @resurrect-hook-post-save-layout hook. It runs right after
+resurrect dumps the layout (before the `last` symlink is set) while the server
+is still live, so it can rewrite each Claude pane's restore command to carry
+that pane's *real* current session id — looked up authoritatively in
+~/.claude/sessions/<claude-pid>.json — turning a bare `claude` / `claude
+--resume` into `~/bin/claude-resume <id>`.
+
+Why this is needed: resurrect saves the literal `ps args` of the pane's child.
+A Claude started via the interactive `--resume` picker (argv just `claude
+--resume`) or bare `claude` has no id in argv, so on restore it reopens the
+picker / a fresh session instead of *that* conversation. The per-pid registry
+holds the true current id no matter how Claude was launched.
+
+Fail-safe by construction: any error leaves the save file exactly as resurrect
+wrote it (we only os.replace() a fully-built new copy, and never raise).
+
+stdlib-only python3 so it adds ~no latency to continuum's 15-min autosave.
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+from collections import deque
+
+HOME = os.path.expanduser("~")
+SESSIONS = os.path.join(HOME, ".claude", "sessions")
+WRAPPER = os.path.join(HOME, "bin", "claude-resume")
+UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+RESUME_RE = re.compile(r"(?:claude-resume|--resume)\s+(" + UUID + ")")
+
+
+def proc_tables():
+    """ppid -> [child pids], pid -> comm, from /proc."""
+    children, comm = {}, {}
+    for d in os.listdir("/proc"):
+        if not d.isdigit():
+            continue
+        try:
+            stat = open(f"/proc/{d}/stat").read()
+        except OSError:
+            continue
+        lp, rp = stat.find("("), stat.rfind(")")
+        if lp < 0 or rp < 0:
+            continue
+        pid = int(stat[:lp].split()[0])
+        rest = stat[rp + 2:].split()
+        comm[pid] = stat[lp + 1:rp]
+        children.setdefault(int(rest[1]), []).append(pid)   # rest[1] = ppid
+    return children, comm
+
+
+def subtree_bfs(root, children):
+    """Breadth-first so the shallowest (interactive) claude is seen before any
+    Task sub-agent claudes nested under it."""
+    out, q = [], deque([root])
+    while q:
+        p = q.popleft()
+        out.append(p)
+        q.extend(children.get(p, []))
+    return out
+
+
+def proc_starttime(pid):
+    try:
+        stat = open(f"/proc/{pid}/stat").read()
+    except OSError:
+        return None
+    return stat[stat.rfind(")") + 2:].split()[19]   # field 22 = starttime
+
+
+def cmdline(pid):
+    try:
+        return open(f"/proc/{pid}/cmdline").read().replace("\0", " ").strip()
+    except OSError:
+        return ""
+
+
+def registry_sid(pid):
+    """Authoritative session id for a live claude pid; None if missing or stale
+    (PID reused — registry's procStart no longer matches /proc)."""
+    try:
+        d = json.load(open(os.path.join(SESSIONS, f"{pid}.json")))
+    except (OSError, ValueError):
+        return None
+    sid = d.get("sessionId")
+    if not sid:
+        return None
+    ps = d.get("procStart")
+    if ps is not None and str(ps) != str(proc_starttime(pid)):
+        return None
+    return sid
+
+
+def resolve(pane_pid, children, comm):
+    """(sid, source) for a pane. registry (live claude) > argv uuid (waiting
+    wrapper / explicit --resume). source 'unresolved' = a claude pane we could
+    not map; None = not a claude pane."""
+    pids = subtree_bfs(pane_pid, children)
+    for pid in pids:
+        if comm.get(pid) == "claude":
+            sid = registry_sid(pid)
+            if sid:
+                return sid, "registry"
+    for pid in pids:
+        m = RESUME_RE.search(cmdline(pid))
+        if m:
+            return m.group(1), "argv"
+    claudeish = any(comm.get(p) == "claude" or "claude-resume" in cmdline(p)
+                    for p in pids)
+    return None, ("unresolved" if claudeish else None)
+
+
+def live_pane_pids():
+    fmt = "#{session_name}\t#{window_index}\t#{pane_index}\t#{pane_pid}"
+    out = subprocess.check_output(["tmux", "list-panes", "-a", "-F", fmt], text=True)
+    table = {}
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if len(parts) == 4:
+            table[(parts[0], parts[1], parts[2])] = int(parts[3])
+    return table
+
+
+def main():
+    if len(sys.argv) < 2:
+        return
+    savefile = sys.argv[1]
+    try:
+        with open(savefile) as fh:
+            lines = fh.read().splitlines()
+        panes = live_pane_pids()
+        children, comm = proc_tables()
+    except Exception as e:                       # never break the save
+        sys.stderr.write(f"claude-resume-save-hook: setup failed: {e}\n")
+        return
+
+    out, changed, unresolved = [], False, []
+    for line in lines:
+        f = line.split("\t")
+        # pane line = 11 tab fields; field 10 is ':<full restore command>'
+        if len(f) == 11 and f[0] == "pane":
+            pane_pid = panes.get((f[1], f[2], f[5]))
+            if pane_pid is not None:
+                try:
+                    sid, src = resolve(pane_pid, children, comm)
+                except Exception:
+                    sid, src = None, None
+                if sid:
+                    newcmd = ":" + WRAPPER + " " + sid
+                    if f[10] != newcmd:
+                        f[10] = newcmd
+                        changed = True
+                        line = "\t".join(f)
+                elif src == "unresolved":
+                    unresolved.append((f[1], f[2], f[5]))
+        out.append(line)
+
+    for key in unresolved:
+        sys.stderr.write(f"claude-resume-save-hook: unresolved claude pane "
+                         f"{key} — left as resurrect saved it\n")
+
+    if changed:
+        tmp = savefile + ".crh.tmp"
+        try:
+            with open(tmp, "w") as fh:
+                fh.write("\n".join(out) + "\n")
+            os.replace(tmp, savefile)            # atomic in-place rewrite
+        except OSError as e:
+            sys.stderr.write(f"claude-resume-save-hook: write failed: {e}\n")
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
+
+if __name__ == "__main__":
+    main()
