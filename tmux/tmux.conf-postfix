@@ -19,7 +19,18 @@ set -g @plugin 'tmux-plugins/tmux-continuum'
 set -g @resurrect-capture-pane-contents 'on'
 # ...and relaunch these on restore, plus resurrect's conservative
 # defaults (vi vim nvim emacs man less more tail top htop).
-set -g @resurrect-processes 'ssh mosh-client claude'
+#   claude         — a Claude pane the hook below could not rewrite (falls back
+#                    to the resume picker).
+#   ~claude-resume — the rewritten `~/bin/claude-resume <id>` command; the ~
+#                    makes resurrect substring-match it (it starts with an
+#                    absolute path, so a plain `claude` entry would never hit).
+set -g @resurrect-processes 'ssh mosh-client claude ~claude-resume'
+
+# On every save, rewrite each Claude pane's restore command to carry its real
+# session id (~/bin/claude-resume <id>), resolved from ~/.claude/sessions/.
+# Without this, picker-launched / bare `claude` panes restore to the wrong
+# session. See ~/bin/claude-resume-save-hook.
+set -g @resurrect-hook-post-save-layout '~/bin/claude-resume-save-hook'
 
 set -g @continuum-save-interval '15'
 
