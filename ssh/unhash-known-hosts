@@ -1,0 +1,343 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.9"
+# dependencies = []
+# ///
+"""
+unhash-known-hosts: Reverse SSH known_hosts hostname hashing.
+
+SSH hashes hostnames using HMAC-SHA1 with a per-entry random salt
+(format: |1|<base64-salt>|<base64-hash>).  Given a candidate hostname
+we can verify it matches deterministically.
+
+This script collects candidate hostnames from:
+  A) Remote systems' known_hosts files (via SSH)
+  B) The local ~/.ssh/config (Host / HostName directives)
+  C) Plaintext entries already in local known_hosts files
+  D) Hostnames passed on the command line via --hostname
+
+Then for every hashed entry in each local known_hosts* file it tries
+every candidate and replaces the hash prefix with the plaintext hostname
+when a match is found.
+"""
+
+import argparse
+import base64
+import hashlib
+import hmac
+import pathlib
+import subprocess
+import sys
+
+DEFAULT_REMOTE_HOSTS = [
+    "ten64.welland.mithis.com",
+    "desktop.buddy.mithis.com",
+    "buddy.mithis.com",
+    "underwood.mithis.com",
+]
+
+
+# ---------------------------------------------------------------------------
+# HMAC-SHA1 matching
+# ---------------------------------------------------------------------------
+
+def hmac_sha1_match(salt_b64: str, hash_b64: str, candidate: str) -> bool:
+    """Return True if candidate hostname matches a |1|salt_b64|hash_b64 entry."""
+    try:
+        salt = base64.b64decode(salt_b64)
+        computed = hmac.new(salt, candidate.encode(), hashlib.sha1).digest()
+        return base64.b64encode(computed).decode() == hash_b64
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Candidate collection helpers
+# ---------------------------------------------------------------------------
+
+def candidates_from_known_hosts_lines(lines: list[str]) -> set[str]:
+    """Extract plaintext hostname fields from known_hosts lines (skips hashed lines)."""
+    result: set[str] = set()
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith('#') or line.startswith('|'):
+            continue
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        # Skip @cert-authority / @revoked markers
+        host_field = parts[1] if parts[0].startswith('@') else parts[0]
+        for host in host_field.split(','):
+            host = host.strip()
+            if host:
+                result.add(host)
+    return result
+
+
+def candidates_from_ssh_config(config_path: pathlib.Path) -> set[str]:
+    """Extract Host/HostName values from an SSH config file (skips wildcards)."""
+    result: set[str] = set()
+    if not config_path.exists():
+        return result
+    for line in config_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        low = line.lower()
+        if low.startswith('host ') or low.startswith('hostname '):
+            _, _, rest = line.partition(' ')
+            for token in rest.split():
+                if '*' not in token and '?' not in token and '%' not in token:
+                    result.add(token)
+    return result
+
+
+def fetch_remote_known_hosts(host: str, verbose: bool) -> list[str]:
+    """SSH to a remote host and return its known_hosts lines."""
+    if verbose:
+        print(f"  Fetching known_hosts from {host} ...", file=sys.stderr)
+    try:
+        result = subprocess.run(
+            [
+                'ssh',
+                '-o', 'BatchMode=yes',
+                '-o', 'ConnectTimeout=10',
+                '-o', 'StrictHostKeyChecking=no',
+                host,
+                # Collect all user + system known_hosts files.
+                # Use find to avoid glob errors on shells with NOMATCH set.
+                'find ~/.ssh -maxdepth 1 -name "known_hosts*" -exec cat {} + ; find /etc/ssh -maxdepth 1 -name "ssh_known_hosts*" -exec cat {} + ; exit 0',
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        lines = result.stdout.splitlines()
+        if verbose:
+            print(f"    -> {len(lines)} lines", file=sys.stderr)
+        return lines
+    except subprocess.TimeoutExpired:
+        print(f"  Warning: timed out connecting to {host}", file=sys.stderr)
+        return []
+    except Exception as exc:
+        print(f"  Warning: {host}: {exc}", file=sys.stderr)
+        return []
+
+
+def port_variants(hostname: str) -> list[str]:
+    """Generate [hostname]:port bracket-style variants for non-standard ports."""
+    if hostname.startswith('['):
+        return [hostname]
+    return [hostname] + [f"[{hostname}]:{p}" for p in (2222, 443, 8022)]
+
+
+# ---------------------------------------------------------------------------
+# Processing
+# ---------------------------------------------------------------------------
+
+def process_file(
+    filepath: pathlib.Path,
+    candidates: set[str],
+    verbose: bool,
+) -> tuple[list[str], int, int]:
+    """
+    Walk a known_hosts file and attempt to unhash each |1|…|… entry.
+
+    Returns (new_lines, resolved_count, total_hashed_count).
+    """
+    lines = filepath.read_text().splitlines(keepends=True)
+    new_lines: list[str] = []
+    resolved = 0
+    total_hashed = 0
+
+    for line in lines:
+        stripped = line.rstrip('\n').rstrip('\r')
+
+        if not stripped.startswith('|1|'):
+            new_lines.append(line)
+            continue
+
+        total_hashed += 1
+
+        # Format: |1|<salt_b64>|<hash_b64> <keytype> <pubkey> [comment]
+        # Split into at most 3 space-separated parts
+        parts = stripped.split(' ', 2)
+        if len(parts) < 3:
+            new_lines.append(line)
+            continue
+
+        hash_token = parts[0]           # |1|salt|hash
+        fields = hash_token.split('|')  # ['', '1', salt_b64, hash_b64]
+        if len(fields) != 4 or fields[1] != '1':
+            new_lines.append(line)
+            continue
+
+        salt_b64 = fields[2]
+        hash_b64 = fields[3]
+        key_rest = ' ' + parts[1] + ' ' + parts[2]   # ' keytype pubkey...'
+
+        match: str | None = None
+        for candidate in sorted(candidates):
+            if hmac_sha1_match(salt_b64, hash_b64, candidate):
+                match = candidate
+                break
+
+        if match:
+            resolved += 1
+            if verbose:
+                short = hash_token[:40] + ('...' if len(hash_token) > 40 else '')
+                print(f"    resolved {short} -> {match}", file=sys.stderr)
+            new_lines.append(match + key_rest + '\n')
+        else:
+            new_lines.append(line)
+
+    return new_lines, resolved, total_hashed
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        'remote_hosts',
+        nargs='*',
+        metavar='REMOTE_HOST',
+        help=(
+            'Remote hosts to SSH into and collect known_hosts from. '
+            f'Defaults to: {", ".join(DEFAULT_REMOTE_HOSTS)}'
+        ),
+    )
+    parser.add_argument(
+        '--known-hosts',
+        dest='extra_known_hosts',
+        metavar='FILE',
+        action='append',
+        default=[],
+        help='Additional local known_hosts file to process (repeatable)',
+    )
+    parser.add_argument(
+        '--hostname',
+        dest='extra_hostnames',
+        metavar='NAME',
+        action='append',
+        default=[],
+        help='Additional candidate hostname to try (repeatable)',
+    )
+    parser.add_argument(
+        '--in-place',
+        action='store_true',
+        help='Overwrite known_hosts files in place (creates .bak backups)',
+    )
+    parser.add_argument(
+        '--no-remote',
+        action='store_true',
+        help='Skip SSH collection; use only local / --hostname candidates',
+    )
+    parser.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        help='Print per-entry match details',
+    )
+    args = parser.parse_args()
+
+    remote_hosts = args.remote_hosts or DEFAULT_REMOTE_HOSTS
+    ssh_dir = pathlib.Path.home() / '.ssh'
+
+    # ------------------------------------------------------------------
+    # Phase 1: build candidate set
+    # ------------------------------------------------------------------
+    candidates: set[str] = set()
+
+    # A) Remote systems
+    if not args.no_remote:
+        print(
+            f"Collecting candidates from {len(remote_hosts)} remote host(s)...",
+            file=sys.stderr,
+        )
+        for rhost in remote_hosts:
+            remote_lines = fetch_remote_known_hosts(rhost, verbose=args.verbose)
+            new_cands = candidates_from_known_hosts_lines(remote_lines)
+            candidates |= new_cands
+
+    # B) SSH config files
+    for cfg in (ssh_dir / 'config', ssh_dir / 'config_extra'):
+        new_cands = candidates_from_ssh_config(cfg)
+        if new_cands and args.verbose:
+            print(f"  {len(new_cands)} candidates from {cfg}", file=sys.stderr)
+        candidates |= new_cands
+
+    # C) Plaintext entries in local known_hosts files (user and system-wide)
+    local_candidate_files = list(ssh_dir.glob('known_hosts*'))
+    for system_kh in pathlib.Path('/etc/ssh').glob('ssh_known_hosts*'):
+        local_candidate_files.append(system_kh)
+    for kh in sorted(local_candidate_files):
+        if kh.suffix == '.bak':
+            continue
+        try:
+            new_cands = candidates_from_known_hosts_lines(kh.read_text().splitlines())
+            candidates |= new_cands
+        except OSError:
+            pass
+
+    # D) Manually specified
+    candidates |= set(args.extra_hostnames)
+
+    # Expand with port variants
+    all_candidates: set[str] = set()
+    for c in candidates:
+        all_candidates.update(port_variants(c))
+
+    print(f"Total candidates to try: {len(all_candidates)}", file=sys.stderr)
+
+    # ------------------------------------------------------------------
+    # Phase 2+3: process known_hosts files
+    # ------------------------------------------------------------------
+    local_files: list[pathlib.Path] = list(
+        p for p in sorted(ssh_dir.glob('known_hosts*')) if p.suffix != '.bak'
+    )
+    for extra in args.extra_known_hosts:
+        p = pathlib.Path(extra)
+        if p not in local_files:
+            local_files.append(p)
+
+    if not local_files:
+        print("No known_hosts files found.", file=sys.stderr)
+        sys.exit(1)
+
+    for kh_path in local_files:
+        if not kh_path.exists():
+            print(f"Skipping {kh_path}: file not found", file=sys.stderr)
+            continue
+
+        if args.verbose:
+            print(f"\nProcessing {kh_path} ...", file=sys.stderr)
+
+        try:
+            new_lines, resolved, total = process_file(
+                kh_path, all_candidates, verbose=args.verbose
+            )
+        except OSError as exc:
+            print(f"Error reading {kh_path}: {exc}", file=sys.stderr)
+            continue
+
+        print(
+            f"{kh_path.name}: {resolved}/{total} hashed entries resolved",
+            file=sys.stderr,
+        )
+
+        if args.in_place:
+            backup = kh_path.with_suffix(kh_path.suffix + '.bak')
+            backup.write_text(kh_path.read_text())
+            kh_path.write_text(''.join(new_lines))
+        else:
+            print(f"\n# === {kh_path} ===")
+            print(''.join(new_lines), end='')
+
+
+if __name__ == '__main__':
+    main()

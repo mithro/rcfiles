@@ -79,12 +79,26 @@ function linkit {
 		# Generate a new file
 		# FIXME: Check we are not overriding any local changes!
 		TMP=~/.$F.tmp
+		# BASE_DOMAIN/DOMAIN/HOSTNAME can expand to the same suffix (e.g.
+		# BASE_DOMAIN == DOMAIN == mithis.com); append each part file once.
+		SEEN_PARTS=" "
 		for FILE_PART in "$FP-$BASE_DOMAIN" "$FP-$DOMAIN" "$FP-$HOSTNAME"; do
+			case "$SEEN_PARTS" in
+				*" $FILE_PART "*) continue ;;
+			esac
+			SEEN_PARTS="$SEEN_PARTS$FILE_PART "
 			if [ -f $FILE_PART ]; then
 				echo $FILE_PART "->" ~/.$F
 				cat $FILE_PART >> $TMP
 			fi
 		done
+		# Optional postfix: appended LAST, after host-specific parts (e.g.
+		# config that must come after host overrides, like a plugin loader
+		# that reads the final status-right). See docs spec section 4.
+		if [ -f "$FP-postfix" ]; then
+			echo "$FP-postfix" "->" ~/.$F
+			cat "$FP-postfix" >> $TMP
+		fi
 		echo -n $FP "->" ~/.$F
 		if [ -f $TMP ]; then
 			echo " (generated)"
@@ -103,6 +117,37 @@ function bin {
 		F=`basename $FP`
 		echo $FP "->" ~/bin/$F
 		ln -sf $FP ~/bin/$F
+	done
+}
+
+function bash_completions {
+	# Symlink vendored completions into the XDG location bash-completion's
+	# lazy loader (_completion_loader) checks first.
+	# Yields gracefully if the system package later ships the same file.
+	local DEST_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions"
+	mkdir -p "$DEST_DIR"
+
+	for FP in "$RCFILES"/bash/completion/*; do
+		[ -f "$FP" ] || continue
+		local NAME
+		NAME=$(basename "$FP")
+
+		# Skip helper scripts and docs — only command-named files are completions.
+		case "$NAME" in
+			update-*|README*|*.md) continue;;
+		esac
+
+		local DEST="$DEST_DIR/$NAME"
+		local SYS="/usr/share/bash-completion/completions/$NAME"
+
+		if [ -f "$SYS" ]; then
+			echo "$SYS exists; removing local override $DEST"
+			rm -f "$DEST"
+			continue
+		fi
+
+		echo "$FP -> $DEST"
+		ln -sf "$FP" "$DEST"
 	done
 }
 
@@ -212,6 +257,7 @@ EOF
 function pkgs {
 	sudo apt-get -y install \
 		ascii \
+		bash-completion \
 		bpython \
 		curl \
 		git \
@@ -220,9 +266,14 @@ function pkgs {
 		jq \
 		kitty-terminfo \
 		mosh \
+		python3-dbus \
+		python3-gi \
 		shellcheck \
 		tmux \
 		zsh
+
+	# Core dump capture for debugging ssh-agent-mux crashes (soft dependency)
+	sudo apt-get -y install systemd-coredump || true
 
 #		iprint \
 
@@ -230,6 +281,26 @@ function pkgs {
 		sudo apt-get -y install \
 			gitk
 	fi
+}
+
+function tmux_plugins {
+	local TPM_INSTALL="$RCFILES/tmux/plugins/tpm/bin/install_plugins"
+	if [ ! -x "$TPM_INSTALL" ]; then
+		echo "Warning: tpm submodule missing; skipping tmux plugin install" >&2
+		return 0
+	fi
+
+	# If a tmux server is already running it may predate the plugin
+	# config; re-source so TMUX_PLUGIN_MANAGER_PATH is set on the server
+	# BEFORE installing. Otherwise tpm falls back to its own parent dir
+	# and clones plugins INSIDE this repo. Errors (e.g. no server
+	# running) are expected and non-fatal.
+	tmux source-file ~/.tmux.conf || true
+
+	# Headless install of @plugin entries into ~/.tmux/plugins/.
+	# Needs network; failure is non-fatal -- install later with prefix+I.
+	"$TPM_INSTALL" \
+		|| echo "Warning: tmux plugin install failed (no network?)" >&2
 }
 
 function crontab {
@@ -273,6 +344,25 @@ function uv_install {
 	curl -LsSf https://astral.sh/uv/install.sh | sh
 }
 
+function ssh_agent {
+	# The local ssh-agent, as a lingering systemd --user service, on ALL hosts.
+	# This is "the ssh-agent": on servers it sits behind ssh-agent-mux; on
+	# laptops/desktops it is fronted by the tmux server (see tmux_persistence).
+	# ssh-agent-start.sh binds ~/.ssh/agent/local.<pid>.sock and maintains the
+	# stable ~/.ssh/agent/local.sock symlink that ssh/bin/ssh-add targets.
+	mkdir -p ~/bin ~/.config/systemd/user ~/.ssh/agent
+
+	# Linger so the agent (and the tmux server) survive between login sessions.
+	loginctl enable-linger "$USER" || echo "Warning: loginctl enable-linger failed (may need sudo)" >&2
+
+	ln -sf "$RCFILES/ssh/systemd/ssh-agent-start.sh" ~/bin/ssh-agent-start.sh
+	ln -sf "$RCFILES/ssh/systemd/ssh-agent.service" ~/.config/systemd/user/ssh-agent.service
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user daemon-reload \
+		|| echo "Warning: systemctl daemon-reload failed" >&2
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable ssh-agent.service \
+		|| echo "Warning: systemctl enable ssh-agent.service failed" >&2
+}
+
 function ssh_agent_mux {
 	# Install ssh-agent-mux from cached binary in repo
 	local ARCH
@@ -295,6 +385,56 @@ function ssh_agent_mux {
 
 	# Create agent socket directory
 	mkdir -p ~/.ssh/agent
+
+	# --- ssh-agent-mux SERVICE (servers only) ---
+	# The mux aggregates the local agent + a forwarded agent into one socket.
+	# On a laptop/desktop the local agent is fronted by the persistent tmux
+	# server (tmux_persistence) and needs no mux. The local ssh-agent.service
+	# itself is installed for ALL hosts by ssh_agent(), called before this.
+	if [ $SERVER -eq 0 ]; then
+		echo "Desktop host: skipping ssh-agent-mux service (tmux fronts the agent)"
+		return 0
+	fi
+
+	# Install ssh-agent-mux service via its built-in installer
+	# Requires XDG_RUNTIME_DIR for dbus access
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" ~/bin/ssh-agent-mux --install-service \
+		|| echo "Warning: ssh-agent-mux --install-service failed" >&2
+
+	# Install drop-in override (symlink directory so updates come from repo)
+	ln -sf "$RCFILES/ssh/systemd/ross-williams-ssh-agent-mux.service.d" \
+		~/.config/systemd/user/ross-williams-ssh-agent-mux.service.d
+
+	# Reload and enable the mux service (ssh-agent.service is enabled by ssh_agent).
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user daemon-reload \
+		|| echo "Warning: systemctl daemon-reload failed" >&2
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable \
+		ross-williams-ssh-agent-mux.service \
+		|| echo "Warning: systemctl enable failed" >&2
+}
+
+function clipboard_over_ssh {
+	# Install clipboard-over-ssh from cached binary in repo
+	local ARCH
+	ARCH=$(dpkg --print-architecture)
+	local CACHED_BIN="$RCFILES/ssh/bin/clipboard-over-ssh-linux-${ARCH}"
+
+	if [ ! -f "$CACHED_BIN" ]; then
+		echo "Warning: No cached clipboard-over-ssh binary for ${ARCH}, skipping"
+		echo "To add support: $RCFILES/ssh/bin/update-clipboard-over-ssh"
+		return 0
+	fi
+
+	cp "$CACHED_BIN" ~/bin/clipboard-over-ssh
+	chmod 755 ~/bin/clipboard-over-ssh
+
+	if [ $SERVER -eq 1 ]; then
+		# Remote/server: install xclip/wl-paste symlinks
+		~/bin/clipboard-over-ssh install-remote
+	else
+		# Desktop/local: install systemd socket-activated server
+		~/bin/clipboard-over-ssh install-local
+	fi
 }
 
 function claude {
@@ -315,6 +455,78 @@ function claude {
 		echo "Warning: ~/.claude exists but is not a symlink"
 		echo "Please manually fix this before continuing."
 	fi
+
+	# claude-notify-gnome provides the desktop notification hook referenced
+	# by dot-claude's settings.json. Clone it so the hooks resolve, and (on
+	# desktops) install its GNOME focus systemd user service.
+	NOTIFY_DIR=~/github/mithro/claude-notify-gnome
+	if [ ! -d "$NOTIFY_DIR" ]; then
+		echo "Cloning claude-notify-gnome repository..."
+		mkdir -p ~/github/mithro
+		git clone git@github.com:mithro/claude-notify-gnome.git "$NOTIFY_DIR"
+	fi
+	if [ $SERVER -ne 1 ] && [ -x "$NOTIFY_DIR/install_service.sh" ]; then
+		( cd "$NOTIFY_DIR" && ./install_service.sh ) || echo "Warning: claude-notify-gnome focus service not installed"
+	fi
+}
+
+function tmux_persistence {
+	# All hosts. Run the tmux server (and the ssh-agent it fronts) as lingering
+	# systemd --user units so they survive any login/logout, SSH disconnect, or
+	# Wayland/compositor crash — instead of as children of the terminal/SSH
+	# session that launched them. (A session-scoped tmux server is killed when
+	# that login session's scope is torn down on logout, regardless of linger.)
+	# See docs/plans/2026-06-03-tmux-ssh-agent-persistence.md
+
+	# Window 0 of the default tmux session tails this. linkit skips it (the
+	# hyphen in the name collides with the host-variant convention), so link it
+	# explicitly here.
+	ln -sf "$RCFILES/tmux/tmux-help" ~/.tmux-help
+
+	# tmux-server.service pins SSH_AUTH_SOCK at a stable per-host "front" socket, so every
+	# pane inherits the right agent regardless of bash/zsh login shell. The unit is
+	# identical on every host; only this symlink's target is host-specific, keyed
+	# on the SAME mux-or-not condition that gates ssh_agent_mux:
+	#   - servers (ssh-agent-mux present): front -> mux.sock   (local + forwarded)
+	#   - laptops/desktops (no mux):       front -> local.sock (local agent only)
+	mkdir -p ~/.ssh/agent
+	if [ $SERVER -eq 1 ]; then
+		ln -sf mux.sock ~/.ssh/agent/front.sock
+	else
+		ln -sf local.sock ~/.ssh/agent/front.sock
+	fi
+
+	mkdir -p ~/.config/systemd/user
+	ln -sf "$RCFILES/systemd/user/tmux-server.service" ~/.config/systemd/user/tmux-server.service
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user daemon-reload || true
+
+	# Ubuntu's stock ssh-agent.socket (openssh_agent) is redundant and would set a
+	# competing SSH_AUTH_SOCK; mask it so our agent stack (local agent, plus the
+	# mux on servers) is the only ssh-agent. It is enabled at global scope, so mask
+	# (not just disable) is required to keep it from starting at boot.
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user mask ssh-agent.socket || true
+
+	# Make front.sock the SINGLE session-wide ssh-agent: point SSH_AUTH_SOCK at it
+	# for the whole user session (GUI / kitty / bare shells), matching tmux-server.service
+	# (front.sock -> mux.sock on servers, -> local.sock on laptops, per above — so
+	# the only server/laptop difference stays "is the mux running"). And mask gcr's
+	# ssh-agent so nothing competes / hijacks SSH_AUTH_SOCK via its ExecStartPost
+	# set-environment. gnome-keyring secrets/pkcs11 (a separate daemon) are
+	# untouched. Keys are added manually (ssh-add) into the local agent; gcr's GUI
+	# auto-unlock no longer applies.
+	mkdir -p ~/.config/environment.d
+	ln -sf "$RCFILES/systemd/environment.d/10-ssh-agent.conf" \
+		~/.config/environment.d/10-ssh-agent.conf
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user mask \
+		gcr-ssh-agent.socket gcr-ssh-agent.service || true
+
+	# Enable tmux-server.service but do NOT start it now: an existing tmux server
+	# may hold the default socket. It activates cleanly at the next boot/login.
+	# NB: named tmux-server (NOT tmux.service) to avoid tmux-continuum's
+	# @continuum-boot feature, which hardcodes a unit named "tmux.service" and
+	# (with boot off, our default) runs `systemctl --user disable tmux.service`
+	# on every plugin load — which would otherwise keep disabling this unit.
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable tmux-server.service || true
 }
 
 # Fix permissions
@@ -336,12 +548,18 @@ linkit vim
 
 pkgs
 
+tmux_plugins
+
+bash_completions
 ack
 gh
 uv_install
+ssh_agent
 ssh_agent_mux
+clipboard_over_ssh
 ssh
 claude
+tmux_persistence
 
 if [ $SERVER -ne 1 ]; then
 	(

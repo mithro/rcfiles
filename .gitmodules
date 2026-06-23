@@ -35,3 +35,6 @@
 [submodule "vim/bundle/riv.vim"]
 	path = vim/bundle-disable/riv.vim
 	url = https://github.com/gu-fan/riv.vim.git
+[submodule "tmux/plugins/tpm"]
+	path = tmux/plugins/tpm
+	url = https://github.com/tmux-plugins/tpm

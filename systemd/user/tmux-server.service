@@ -1,0 +1,47 @@
+[Unit]
+Description=tmux server (persistent across logout/compositor crash)
+Documentation=man:tmux(1)
+# Runs the tmux server as a lingering systemd --user unit so it survives any
+# login/logout, SSH disconnect, or Wayland/compositor crash. (A tmux server
+# started inside a login session lives in that session's scope and is killed
+# when the scope is torn down on logout, regardless of linger.)
+# Pin the agent the server fronts: the local ssh-agent always; the ssh-agent-mux
+# too when present (servers). Wants= is soft, so the mux unit being absent on
+# laptops/desktops is fine. The concrete socket is chosen per host by the
+# ~/.ssh/agent/front.sock symlink (set in setup.sh tmux_persistence).
+# NB: the mux is only a soft Wants= (it's absent on laptops), so on a server a
+# mux failure won't fail tmux-server.service — front.sock -> mux.sock would dangle
+# and panes would get a broken SSH_AUTH_SOCK until the mux is back up.
+# NB: deliberately NOT named tmux.service — tmux-continuum's @continuum-boot
+# feature hardcodes a unit "tmux.service" and (boot off, our default) disables it
+# on every plugin load, which would otherwise clobber this unit.
+Requires=ssh-agent.service
+Wants=ross-williams-ssh-agent-mux.service
+After=ssh-agent.service ross-williams-ssh-agent-mux.service
+
+[Service]
+Type=forking
+# Decisive agent pin: every pane the server forks inherits this (SSH_AUTH_SOCK
+# is deliberately excluded from tmux's update-environment). front.sock is a
+# per-host symlink: -> mux.sock on servers (local + forwarded keys), -> local.sock
+# on laptops (local agent only). Works for bash *and* zsh login shells, since
+# panes inherit it from the server's birth env.
+Environment=SSH_AUTH_SOCK=%h/.ssh/agent/front.sock
+# Start a detached "default" session whose window 0 (tail -f ~/.tmux-help, kept
+# alive by remain-on-exit) stops the server exiting when empty. Mirrors the
+# session ~/.zprofile expects, so a later login just attaches to it.
+#
+# Run on a DEDICATED socket (-L main), NOT tmux's shared "default" socket, so
+# ExecStop=kill-server can only ever kill THIS server — never a tmux the user
+# started on the default socket. (With the shared socket, `systemctl start` here
+# attached to a pre-existing default-socket server instead of forking its own;
+# Type=forking then saw MainPID=0, declared the unit dead, and ran ExecStop ->
+# kill-server, killing that foreign server.) Logins attach with `tmux -L main
+# attach` — zprofile does this.
+ExecStart=/usr/bin/tmux -L main new-session -d -s default -n h "tail -f %h/.tmux-help"
+ExecStartPost=/usr/bin/tmux -L main set-window-option -t default:h remain-on-exit on
+ExecStop=/usr/bin/tmux -L main kill-server
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

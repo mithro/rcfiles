@@ -25,6 +25,7 @@ jobs:
             vim/bundle
             vim/bundle-disable
             gdb/gdb-dashboard
+            tmux/plugins/tpm
           ignore_names: >-
             zprofile
 

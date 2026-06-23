@@ -1,0 +1,44 @@
+#!/bin/bash
+# Download clipboard-over-ssh binaries from GitHub Actions artifacts and cache
+# them in the repo. Run this manually when upgrading to a new version.
+#
+# Requires: gh (GitHub CLI), authenticated
+#
+# Usage: ./update-clipboard-over-ssh
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="mithro/clipboard-over-ssh"
+ARCHES="amd64 arm64"
+
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+
+echo "Fetching latest artifacts from ${REPO}..."
+
+for ARCH in $ARCHES; do
+    NAME="clipboard-over-ssh-linux-${ARCH}"
+    DEST="${SCRIPT_DIR}/${NAME}"
+
+    # Get the most recent artifact ID for this architecture
+    ARTIFACT_ID=$(gh api "repos/${REPO}/actions/artifacts" \
+        --jq "[.artifacts[] | select(.name == \"${NAME}\")] | .[0].id")
+
+    if [ -z "$ARTIFACT_ID" ] || [ "$ARTIFACT_ID" = "null" ]; then
+        echo "Error: no artifact found for ${NAME}" >&2
+        exit 1
+    fi
+
+    echo "  ${NAME} (artifact ${ARTIFACT_ID})"
+    gh api "repos/${REPO}/actions/artifacts/${ARTIFACT_ID}/zip" > "$TMPDIR/${NAME}.zip"
+    unzip -o -d "$TMPDIR" "$TMPDIR/${NAME}.zip"
+    mv "$TMPDIR/${NAME}" "$DEST"
+    chmod 755 "$DEST"
+    file "$DEST"
+done
+
+echo ""
+echo "Done. Verify and commit:"
+echo "  git add ssh/bin/clipboard-over-ssh-linux-*"
+echo "  git commit -m 'Update clipboard-over-ssh binaries'"

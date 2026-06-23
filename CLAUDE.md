@@ -44,18 +44,19 @@ This script:
 
 ### Configuration Linking System
 
-The `linkit()` function in `setup.sh:24-60` implements a hostname-aware configuration system:
+The `linkit()` function in `setup.sh` implements a hostname-aware configuration system:
 - Base configuration files are in directories like `bash/`, `git/`, `tmux/`, `vim/`
 - Files can have hostname-specific overrides with suffixes: `-$BASE_DOMAIN`, `-$DOMAIN`, or `-$HOSTNAME`
 - If override files exist, they are appended to the base configuration
 - Otherwise, the base file is symlinked directly to `~/.$FILENAME`
+- An optional `<base>-postfix` file is appended **last**, after all host-specific parts (generated order: base → host parts → postfix). Used e.g. for the tmux plugin loader, which must load after host `status-right` overrides.
 
 ### Directory Structure
 
 - `bash/`: Bash configuration with main `bash_aliases` file and additional scripts in `bash/include/`
 - `git/`: Git configuration (`gitconfig`, `gitignore`)
 - `vim/`: Vim configuration with Pathogen plugin manager and multiple plugins as git submodules in `vim/bundle/`
-- `tmux/`: Tmux configuration with hostname-specific overrides
+- `tmux/`: Tmux configuration with hostname-specific overrides; TPM vendored at `tmux/plugins/tpm` (plugins clone to `~/.tmux/plugins/`); plugin block in `tmux/tmux.conf-postfix` (appended by linkit after host parts)
 - `ssh/`: SSH configuration with control socket persistence and hostname-specific settings
 - `bin/`: Utility scripts symlinked to `~/bin/`
 - `gdb/`: GDB configuration including gdb-dashboard submodule
@@ -77,6 +78,13 @@ The `linkit()` function in `setup.sh:24-60` implements a hostname-aware configur
 - SSH keys stored in `ssh/keys/` (not tracked in main repository)
 - On server installations, authorized_keys are downloaded from `github.com/mithro.keys` with local `ssh/authorized_keys` appended if present
 - **Agent multiplexing**: `ssh-agent-mux` provides a stable `SSH_AUTH_SOCK` (`~/.ssh/agent/mux.sock`) that multiplexes a local ssh-agent with the SSH-forwarded agent, surviving tmux reattach and SSH reconnect. Config in `ssh/ssh-agent-mux.toml`, startup logic in `tmux/zprofile`, ssh-add wrapper in `bin/ssh-add`. See `ssh/README.md` for architecture details.
+
+**Tmux Session Persistence:**
+- TPM (tmux plugin manager) is a pinned git submodule at `tmux/plugins/tpm`; managed plugins live outside the repo in `~/.tmux/plugins/` via `TMUX_PLUGIN_MANAGER_PATH`
+- tmux-resurrect + tmux-continuum: autosave every 15 minutes, restore is manual (`prefix+Ctrl-r`); `@continuum-restore` deliberately unset
+- Saves capture pane scrollback and relaunch whitelisted programs (resurrect defaults plus ssh, mosh-client, claude)
+- The plugin block ships in `tmux/tmux.conf-postfix`, which `linkit` appends after the base config and all host-specific parts; this ordering keeps continuum's autosave hook (prepended to `status-right` at load) from being wiped by a host `status-right` override
+- `setup.sh` installs plugins headlessly via `tmux_plugins()`
 
 **Vim Configuration:**
 - Uses Pathogen for plugin management (`vim/bundle/vim-pathogen`)
