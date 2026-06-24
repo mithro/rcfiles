@@ -1,0 +1,709 @@
+#!/usr/bin/env python3
+"""Configure VLANs on Netgear Smart Managed Plus (GS105PE) switches via the web UI.
+
+Netgear "Smart Managed Plus" switches lack SNMP write, SSH, or CLI. The only
+remote management is a web UI. This tool automates VLAN configuration to avoid
+error-prone manual web UI interaction.
+
+Currently supports GS105PE-style switches only (5-port PoE). These use:
+  - /login.cgi for authentication (MD5(merge(password, rand)))
+  - /8021qCf.cgi for 802.1Q enable/disable and VLAN creation/deletion
+  - /8021qMembe.cgi for port membership (tagged/untagged/not-member)
+  - /portPVID.cgi for port VLAN ID assignment
+
+Usage:
+    netgear-smp-vlan <host> show                      # display full VLAN config
+    netgear-smp-vlan <host> enable                     # enable 802.1Q VLAN
+    netgear-smp-vlan <host> disable                    # disable 802.1Q VLAN
+    netgear-smp-vlan <host> add <vlan-id>              # create a VLAN (1-4094)
+    netgear-smp-vlan <host> delete <vlan-id>           # delete a VLAN
+    netgear-smp-vlan <host> members <vlan-id> <ports>  # set port membership
+    netgear-smp-vlan <host> pvid <port> <vlan-id>      # set PVID for a port
+
+Membership <ports> is a 5-char string (one per port): U=Untagged, T=Tagged, X=Not a member.
+Example: netgear-smp-vlan sw-netgear-poe-micro1 members 5 TUXXX
+"""
+
+import argparse
+import csv
+import hashlib
+import io
+import re
+import socket
+import sys
+from urllib.parse import urlencode
+
+
+
+# --- Shared utilities (same auth scheme as netgear-smp-reboot) ---
+
+def merge(s1: str, s2: str) -> str:
+    """Interleave two strings character by character (Netgear auth scheme)."""
+    result = []
+    i, j = 0, 0
+    while i < len(s1) or j < len(s2):
+        if i < len(s1):
+            result.append(s1[i]); i += 1
+        if j < len(s2):
+            result.append(s2[j]); j += 1
+    return "".join(result)
+
+
+def lookup_password(host: str, csv_path: str) -> str | None:
+    """Look up a switch password from the gdoc2netcfg network.csv."""
+    try:
+        try:
+            ip = socket.gethostbyname(host)
+        except socket.gaierror:
+            ip = host
+
+        with open(csv_path, newline="") as f:
+            for line in f:
+                if line.startswith("Location,") or ",Machine," in line:
+                    break
+            else:
+                return None
+            remaining = line + f.read()
+            reader = csv.DictReader(io.StringIO(remaining))
+            for row in reader:
+                machine = row.get("Machine", "")
+                ipv4 = row.get("IPv4", "").replace("X", "1")
+                password = row.get("Password", "").strip()
+                if not password:
+                    continue
+                if machine and (host == machine or host.startswith(machine + ".")):
+                    return password
+                if ip and ipv4 == ip:
+                    return password
+    except (FileNotFoundError, KeyError):
+        pass
+    return None
+
+
+def _login_hash(password: str, rand: str) -> str:
+    """Compute the Netgear MD5(merge(password, rand)) login hash."""
+    return hashlib.md5(merge(password, rand).encode()).hexdigest()
+
+
+def _extract_rand(html: str) -> str | None:
+    """Extract the rand nonce from a Netgear login page."""
+    m = re.search(r"rand'[^>]*value=['\"]([^'\"]+)['\"]", html)
+    return m.group(1) if m else None
+
+
+def _extract_hash(html: str) -> str | None:
+    """Extract the CSRF hash token from a GS105PE page."""
+    m = re.search(r"name=['\"]hash['\"][^>]*value=['\"]([^'\"]+)['\"]", html)
+    return m.group(1) if m else None
+
+
+# --- Session management ---
+
+class SwitchSession:
+    """Manages an authenticated session to a GS105PE switch.
+
+    Uses raw sockets with one fresh TCP connection per HTTP request. The
+    GS105PE closes the connection after every response (Connection: close)
+    and sends no Content-Length header — Python's http.client and requests
+    both fail because read() blocks waiting for an EOF that the response
+    parsing logic consumes, and the SID cookie contains RFC 6265-violating
+    characters (backslashes, brackets, backticks) that requests silently drops.
+
+    Raw sockets avoid both issues: we read until the server closes, then
+    open a fresh connection for the next request.
+    """
+
+    def __init__(self, host: str, password: str):
+        self.host = host
+        try:
+            self.ip = socket.gethostbyname(host)
+        except socket.gaierror:
+            self.ip = host
+        self.password = password
+        self._cookie = ""
+        self._logged_in = False
+
+    @staticmethod
+    def _parse_response(raw: bytes) -> tuple[int, str, dict]:
+        """Parse an HTTP response into (status_code, body_text, headers_dict).
+
+        Returns (0, "", {}) for empty responses — the GS105PE sometimes closes
+        the connection without a response body (e.g., when POSTing to select a
+        VLAN that's already displayed).
+        """
+        if not raw:
+            return 0, "", {}
+        text = raw.decode("utf-8", errors="replace")
+        if "\r\n\r\n" not in text:
+            return 0, "", {}
+        header_text, body_text = text.split("\r\n\r\n", 1)
+        status_code = int(header_text.split(" ", 2)[1])
+        resp_headers = {}
+        for line in header_text.split("\r\n")[1:]:
+            if ": " in line:
+                k, v = line.split(": ", 1)
+                resp_headers[k] = v
+        return status_code, body_text, resp_headers
+
+    def _http(self, method: str, path: str, headers: dict | None = None,
+              body: str | None = None, timeout: int = 10) -> tuple[int, str, dict]:
+        """Send one HTTP request on a fresh TCP connection.
+
+        Opens a new socket, sends the request, reads until the server closes
+        the connection, and returns (status_code, body_text, headers_dict).
+        """
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        try:
+            sock.connect((self.ip, 80))
+
+            req = f"{method} {path} HTTP/1.1\r\nHost: {self.ip}\r\n"
+            if headers:
+                for k, v in headers.items():
+                    req += f"{k}: {v}\r\n"
+            if body:
+                req += f"Content-Length: {len(body)}\r\n"
+            req += "\r\n"
+            if body:
+                req += body
+            sock.sendall(req.encode())
+
+            # Read until server closes the connection
+            response = b""
+            while True:
+                chunk = sock.recv(8192)
+                if not chunk:
+                    break
+                response += chunk
+        finally:
+            sock.close()
+
+        return self._parse_response(response)
+
+    def login(self) -> None:
+        """Authenticate to the switch."""
+        # GET login page for the rand nonce
+        _, html, _ = self._http("GET", "/login.cgi")
+        rand = _extract_rand(html)
+        if not rand:
+            raise RuntimeError("Could not find rand nonce on login page — is this a GS105PE?")
+
+        # POST login (the rand is a server-global nonce, not per-connection)
+        pwd_hash = _login_hash(self.password, rand)
+        body = urlencode({"password": pwd_hash})
+        _, html, resp_headers = self._http(
+            "POST", "/login.cgi",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            body=body,
+        )
+
+        # Extract SID from raw Set-Cookie header
+        set_cookie = resp_headers.get("Set-Cookie", "")
+        sid_match = re.search(r"SID=([^;]+)", set_cookie)
+        if not sid_match:
+            raise RuntimeError("Login failed — check password (or switch may be locked out)")
+
+        self._cookie = f"SID={sid_match.group(1)}"
+        self._logged_in = True
+
+    def _request(self, method: str, path: str, timeout: int = 10, **kwargs):
+        """Make an authenticated HTTP request."""
+        if not self._logged_in:
+            self.login()
+        path_str = path if path.startswith("/") else f"/{path}"
+        headers = {"Cookie": self._cookie}
+        body = None
+        if "data" in kwargs:
+            body = urlencode(kwargs["data"])
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+
+        status, text, resp_headers = self._http(
+            method, path_str, headers=headers, body=body, timeout=timeout,
+        )
+
+        class _Resp:
+            def __init__(self, status, text, resp_headers):
+                self.status_code = status
+                self.text = text
+                self.headers = resp_headers
+        return _Resp(status, text, resp_headers)
+
+    def get(self, path: str, **kwargs):
+        """GET a page, ensuring we're logged in."""
+        return self._request("GET", path, **kwargs)
+
+    def post(self, path: str, data: dict, timeout: int = 10, **kwargs):
+        """POST to a page, ensuring we're logged in."""
+        return self._request("POST", path, data=data, timeout=timeout, **kwargs)
+
+
+# --- Parsing helpers ---
+
+NUM_PORTS = 5  # GS105PE has 5 ports
+
+# hiddenMem encoding: switch uses "1"=Untagged, "2"=Tagged, "3"=Not a member
+# Our CLI uses: U=Untagged, T=Tagged, X=Not a member
+WIRE_TO_CLI = {"1": "U", "2": "T", "3": "X"}
+CLI_TO_WIRE = {"U": "1", "T": "2", "X": "3"}
+
+
+def _parse_8021q_status(html: str) -> str:
+    """Parse whether Advanced 802.1Q VLAN is enabled or disabled.
+
+    Works with both 8021qBasic.cgi and 8021qCf.cgi. The HTML uses single quotes
+    around attribute values: value='Enable' name='status' checked/
+    """
+    # Match: value='Enable' ... checked  OR  checked ... value='Enable'
+    if re.search(r"""value=['"]Enable['"][^>]*checked""", html):
+        return "Enabled"
+    if re.search(r"""value=['"]Disable['"][^>]*checked""", html):
+        return "Disabled"
+    if re.search(r"""checked[^>]*value=['"]Enable['"]""", html):
+        return "Enabled"
+    if re.search(r"""checked[^>]*value=['"]Disable['"]""", html):
+        return "Disabled"
+    return "Unknown"
+
+
+def _parse_vlan_list(html: str) -> list[int]:
+    """Parse the list of existing VLANs from 8021qCf.cgi."""
+    vlans = []
+    # Each VLAN has a checkbox: <input type="checkbox" name="vlanckN" value="VID">
+    for m in re.finditer(r'name="vlanck\d+"[^>]*value="(\d+)"', html):
+        vlans.append(int(m.group(1)))
+    return sorted(vlans)
+
+
+def _parse_vlan_select(html: str) -> list[int]:
+    """Parse the VLAN dropdown on the membership page."""
+    vlans = []
+    for m in re.finditer(r'<option[^>]*value="(\d+)"', html):
+        vlans.append(int(m.group(1)))
+    return sorted(vlans)
+
+
+def _parse_membership(html: str) -> dict[int, str]:
+    """Parse port membership from 8021qMembe.cgi for the currently selected VLAN.
+
+    Returns dict mapping port number (1-based) to state character (U/T/X).
+    The hiddenMem input can appear as:
+      <input name="hiddenMem" id="hiddenMem" value="22222" type="hidden">
+    """
+    # Match hiddenMem value regardless of attribute order
+    m = re.search(r'id="hiddenMem"[^>]*value="([^"]*)"', html)
+    if not m:
+        m = re.search(r'name="hiddenMem"[^>]*value="([^"]*)"', html)
+    if not m:
+        return {}
+    raw = m.group(1)
+    result = {}
+    for i, ch in enumerate(raw[:NUM_PORTS]):
+        result[i + 1] = WIRE_TO_CLI.get(ch, "?")
+    return result
+
+
+def _parse_selected_vlan(html: str) -> int | None:
+    """Parse which VLAN is currently selected in the membership dropdown."""
+    m = re.search(r'<option[^>]*selected[^>]*value="(\d+)"', html)
+    if m:
+        return int(m.group(1))
+    # Try other order
+    m = re.search(r'<option[^>]*value="(\d+)"[^>]*selected', html)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def _parse_pvid_table(html: str) -> dict[int, int]:
+    """Parse per-port PVID from portPVID.cgi.
+
+    The actual HTML structure per port row is:
+      <tr class="portID">
+        <td ...><input type="checkbox" name="port0" ...></td>
+        <td ... sel="text">1<input type="hidden" value="1"></td>
+        <td ... sel="input">90</td>
+      </tr>
+
+    Port checkboxes are 0-indexed (port0=Port 1, port4=Port 5).
+    The port number is in the sel="text" cell, and the PVID is in the sel="input" cell.
+    """
+    pvids = {}
+    # Match each portID row: extract port number from text cell and PVID from input cell
+    for m in re.finditer(
+        r'<tr\s+class="portID">\s*'
+        r'<td[^>]*>.*?</td>\s*'                           # checkbox cell
+        r'<td[^>]*sel="text"[^>]*>(\d+).*?</td>\s*'       # port number cell
+        r'<td[^>]*sel="input"[^>]*>(\d+)</td>',            # PVID cell
+        html, re.DOTALL
+    ):
+        pvids[int(m.group(1))] = int(m.group(2))
+
+    return pvids
+
+
+def _find_vlan_checkbox_index(html: str, vlan_id: int) -> int | None:
+    """Find the checkbox index for a VLAN on 8021qCf.cgi (for deletion)."""
+    for m in re.finditer(r'name="vlanck(\d+)"[^>]*value="(\d+)"', html):
+        if int(m.group(2)) == vlan_id:
+            return int(m.group(1))
+    return None
+
+
+# --- Commands ---
+
+def cmd_show(sw: SwitchSession) -> None:
+    """Display full VLAN configuration."""
+    # 1. 802.1Q status — check the Advanced page (8021qCf.cgi) which is where
+    # the actual 802.1Q VLAN config lives (Basic is a different, simpler mode)
+    r = sw.get("/8021qCf.cgi")
+    status = _parse_8021q_status(r.text)
+    print(f"802.1Q VLAN: {status}")
+
+    if status == "Disabled":
+        print("\n  802.1Q is disabled — enable it first to configure VLANs.")
+        return
+
+    # 2. VLAN list (already have the page from status check)
+    vlans = _parse_vlan_list(r.text)
+    print(f"\nVLANs: {', '.join(str(v) for v in vlans) if vlans else '(none)'}")
+
+    # 3. Membership per VLAN
+    # First GET loads the page (defaults to first VLAN). Then POST with VLAN_ID
+    # (without hiddenMem) safely selects each VLAN without modifying anything.
+    if vlans:
+        print(f"\nMembership (ports 1-{NUM_PORTS}):")
+        print(f"  {'VLAN':>6}  ", end="")
+        for p in range(1, NUM_PORTS + 1):
+            print(f"  P{p}", end="")
+        print()
+        print(f"  {'----':>6}  ", end="")
+        for _ in range(NUM_PORTS):
+            print("  --", end="")
+        print()
+
+        r = sw.get("/8021qMembe.cgi")
+        page_hash = _extract_hash(r.text)
+        # The initial GET shows the first VLAN's membership (typically VLAN 1).
+        # POSTing to select a VLAN that's already displayed returns an empty
+        # response on GS105PE firmware. Use the GET result for the default VLAN.
+        default_membership = _parse_membership(r.text)
+        default_vlan = _parse_selected_vlan(r.text) or (vlans[0] if vlans else None)
+
+        for vlan_id in vlans:
+            if vlan_id == default_vlan and default_membership:
+                membership = default_membership
+            else:
+                r = sw.post("/8021qMembe.cgi", data={
+                    "VLAN_ID": str(vlan_id),
+                    "hash": page_hash or "",
+                })
+                page_hash = _extract_hash(r.text) or page_hash
+                membership = _parse_membership(r.text)
+            print(f"  {vlan_id:>6}  ", end="")
+            for p in range(1, NUM_PORTS + 1):
+                state = membership.get(p, "?")
+                print(f"   {state}", end="")
+            print()
+
+    # 4. PVIDs
+    r = sw.get("/portPVID.cgi")
+    pvids = _parse_pvid_table(r.text)
+    if pvids:
+        print(f"\nPort PVID:")
+        for p in sorted(pvids):
+            print(f"  Port {p}: VLAN {pvids[p]}")
+    else:
+        print(f"\nPort PVID: (could not parse)")
+
+
+def cmd_enable(sw: SwitchSession) -> None:
+    """Enable Advanced 802.1Q VLAN mode via 8021qCf.cgi.
+
+    WARNING: enabling 802.1Q with default config (VLAN 1 only, all ports
+    untagged) will make the switch unreachable if it's on a trunk port.
+    Configure VLANs immediately after enabling.
+    """
+    r = sw.get("/8021qCf.cgi")
+    status = _parse_8021q_status(r.text)
+    if status == "Enabled":
+        print("802.1Q VLAN is already enabled.")
+        return
+
+    page_hash = _extract_hash(r.text)
+    if not page_hash:
+        raise RuntimeError("Could not extract hash from 8021qCf.cgi")
+
+    # State-changing POST — the switch takes 10-30s to apply
+    r = sw.post("/8021qCf.cgi", data={
+        "status": "Enable",
+        "hash": page_hash,
+    }, timeout=30)
+    print("802.1Q VLAN enabled.")
+
+
+def cmd_disable(sw: SwitchSession) -> None:
+    """Disable Advanced 802.1Q VLAN mode via 8021qCf.cgi."""
+    r = sw.get("/8021qCf.cgi")
+    status = _parse_8021q_status(r.text)
+    if status == "Disabled":
+        print("802.1Q VLAN is already disabled.")
+        return
+
+    page_hash = _extract_hash(r.text)
+    if not page_hash:
+        raise RuntimeError("Could not extract hash from 8021qCf.cgi")
+
+    # State-changing POST — the switch takes 10-30s to apply
+    r = sw.post("/8021qCf.cgi", data={
+        "status": "Disable",
+        "hash": page_hash,
+    }, timeout=30)
+    print("802.1Q VLAN disabled.")
+
+
+def cmd_add(sw: SwitchSession, vlan_id: int) -> None:
+    """Create a new VLAN."""
+    if not 1 <= vlan_id <= 4094:
+        print(f"error: VLAN ID must be 1-4094, got {vlan_id}", file=sys.stderr)
+        sys.exit(1)
+
+    r = sw.get("/8021qCf.cgi")
+    page_hash = _extract_hash(r.text)
+    if not page_hash:
+        raise RuntimeError("Could not extract hash from 8021qCf.cgi")
+
+    # Check if VLAN already exists
+    existing = _parse_vlan_list(r.text)
+    if vlan_id in existing:
+        print(f"VLAN {vlan_id} already exists.")
+        return
+
+    r = sw.post("/8021qCf.cgi", data={
+        "ACTION": "Add",
+        "ADD_VLANID": str(vlan_id),
+        "status": "Enable",
+        "hash": page_hash,
+    })
+
+    # Verify
+    vlans = _parse_vlan_list(r.text)
+    if vlan_id in vlans:
+        print(f"VLAN {vlan_id} created.")
+    else:
+        print(f"warning: VLAN {vlan_id} may not have been created — check with 'show'", file=sys.stderr)
+
+
+def cmd_delete(sw: SwitchSession, vlan_id: int) -> None:
+    """Delete a VLAN."""
+    if vlan_id == 1:
+        print("error: cannot delete VLAN 1 (default VLAN)", file=sys.stderr)
+        sys.exit(1)
+
+    r = sw.get("/8021qCf.cgi")
+    page_hash = _extract_hash(r.text)
+    if not page_hash:
+        raise RuntimeError("Could not extract hash from 8021qCf.cgi")
+
+    idx = _find_vlan_checkbox_index(r.text, vlan_id)
+    if idx is None:
+        print(f"error: VLAN {vlan_id} does not exist", file=sys.stderr)
+        sys.exit(1)
+
+    r = sw.post("/8021qCf.cgi", data={
+        "ACTION": "Delete",
+        f"vlanck{idx}": str(vlan_id),
+        "status": "Enable",
+        "hash": page_hash,
+    })
+
+    # Verify
+    vlans = _parse_vlan_list(r.text)
+    if vlan_id not in vlans:
+        print(f"VLAN {vlan_id} deleted.")
+    else:
+        print(f"warning: VLAN {vlan_id} may still exist — check with 'show'", file=sys.stderr)
+
+
+def cmd_members(sw: SwitchSession, vlan_id: int, ports_str: str) -> None:
+    """Set port membership for a VLAN.
+
+    ports_str is a 5-character string like "TUXXX" where:
+      U = Untagged, T = Tagged, X = Not a member
+    """
+    if len(ports_str) != NUM_PORTS:
+        print(f"error: ports string must be exactly {NUM_PORTS} characters, got {len(ports_str)}", file=sys.stderr)
+        sys.exit(1)
+
+    ports_str = ports_str.upper()
+    for i, ch in enumerate(ports_str):
+        if ch not in CLI_TO_WIRE:
+            print(f"error: invalid port state '{ch}' at position {i+1} — use U, T, or X", file=sys.stderr)
+            sys.exit(1)
+
+    # Convert CLI format to wire format
+    hidden_mem = "".join(CLI_TO_WIRE[ch] for ch in ports_str)
+
+    # GET the membership page — defaults to first VLAN (usually VLAN 1)
+    r = sw.get("/8021qMembe.cgi")
+    page_hash = _extract_hash(r.text)
+    default_vlan = _parse_selected_vlan(r.text)
+
+    # Select the target VLAN if it's not the default.
+    # POSTing VLAN_ID for the already-displayed VLAN returns an empty response
+    # on GS105PE firmware, so we skip the select POST if already on target.
+    if default_vlan != vlan_id:
+        r = sw.post("/8021qMembe.cgi", data={
+            "VLAN_ID": str(vlan_id),
+            "hash": page_hash or "",
+        })
+        new_hash = _extract_hash(r.text)
+        if new_hash:
+            page_hash = new_hash
+
+        selected = _parse_selected_vlan(r.text)
+        if selected is not None and selected != vlan_id:
+            available = _parse_vlan_select(r.text)
+            if vlan_id not in available:
+                print(f"error: VLAN {vlan_id} does not exist — create it first with 'add {vlan_id}'", file=sys.stderr)
+                sys.exit(1)
+
+    if not page_hash:
+        raise RuntimeError("Could not extract hash from membership page")
+
+    # POST the membership update
+    r = sw.post("/8021qMembe.cgi", data={
+        "VLAN_ID": str(vlan_id),
+        "hiddenMem": hidden_mem,
+        "hash": page_hash,
+    })
+
+    # Verify by parsing the response (may be empty for VLAN 1, re-GET if needed)
+    new_membership = _parse_membership(r.text)
+    if not new_membership:
+        r = sw.get("/8021qMembe.cgi")
+        new_membership = _parse_membership(r.text)
+    display = "".join(new_membership.get(p, "?") for p in range(1, NUM_PORTS + 1))
+    print(f"VLAN {vlan_id} membership set: {display}")
+
+
+def cmd_pvid(sw: SwitchSession, port: int, vlan_id: int) -> None:
+    """Set the PVID for a port."""
+    if not 1 <= port <= NUM_PORTS:
+        print(f"error: port must be 1-{NUM_PORTS}, got {port}", file=sys.stderr)
+        sys.exit(1)
+    if not 1 <= vlan_id <= 4094:
+        print(f"error: VLAN ID must be 1-4094, got {vlan_id}", file=sys.stderr)
+        sys.exit(1)
+
+    r = sw.get("/portPVID.cgi")
+    page_hash = _extract_hash(r.text)
+    if not page_hash:
+        raise RuntimeError("Could not extract hash from portPVID.cgi")
+
+    # Port checkboxes are 0-indexed: port0=Port 1, port4=Port 5
+    r = sw.post("/portPVID.cgi", data={
+        f"port{port - 1}": "checked",
+        "pvid": str(vlan_id),
+        "hash": page_hash,
+    })
+
+    print(f"Port {port} PVID set to {vlan_id}.")
+
+
+# --- Main ---
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Configure VLANs on Netgear Smart Managed Plus switches via web UI",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""\
+Membership string format (one char per port, 5 total):
+  U = Untagged    T = Tagged    X = Not a member
+
+Examples:
+  %(prog)s sw-netgear-poe-micro1 show
+  %(prog)s sw-netgear-poe-micro1 enable
+  %(prog)s sw-netgear-poe-micro1 add 5
+  %(prog)s sw-netgear-poe-micro1 members 5 TUXXX
+  %(prog)s sw-netgear-poe-micro1 pvid 2 5
+  %(prog)s sw-netgear-poe-micro1 delete 5
+""",
+    )
+    parser.add_argument("host", help="Switch hostname or IP address")
+    parser.add_argument("command", choices=["show", "enable", "disable", "add", "delete", "members", "pvid"],
+                        help="Command to execute")
+    parser.add_argument("args", nargs="*", help="Command arguments")
+    parser.add_argument("-p", "--password", help="Switch web UI password")
+    parser.add_argument(
+        "--password-from-csv",
+        default="/opt/gdoc2netcfg/.cache/network.csv",
+        help="CSV file to look up password (default: %(default)s)",
+    )
+    args = parser.parse_args()
+
+    password = args.password
+    if not password:
+        password = lookup_password(args.host, args.password_from_csv)
+    if not password:
+        print(f"error: no password for {args.host} (use -p or check {args.password_from_csv})", file=sys.stderr)
+        sys.exit(1)
+
+    sw = SwitchSession(args.host, password)
+
+    try:
+        if args.command == "show":
+            sw.login()
+            print(f"Connected to {args.host} ({sw.ip})")
+            cmd_show(sw)
+
+        elif args.command == "enable":
+            sw.login()
+            cmd_enable(sw)
+
+        elif args.command == "disable":
+            sw.login()
+            cmd_disable(sw)
+
+        elif args.command == "add":
+            if len(args.args) != 1:
+                print("error: 'add' requires exactly one argument: <vlan-id>", file=sys.stderr)
+                sys.exit(1)
+            sw.login()
+            cmd_add(sw, int(args.args[0]))
+
+        elif args.command == "delete":
+            if len(args.args) != 1:
+                print("error: 'delete' requires exactly one argument: <vlan-id>", file=sys.stderr)
+                sys.exit(1)
+            sw.login()
+            cmd_delete(sw, int(args.args[0]))
+
+        elif args.command == "members":
+            if len(args.args) != 2:
+                print("error: 'members' requires exactly two arguments: <vlan-id> <ports>", file=sys.stderr)
+                print("  ports is a 5-char string: U=Untagged, T=Tagged, X=Not a member", file=sys.stderr)
+                print("  example: members 5 TUXXX", file=sys.stderr)
+                sys.exit(1)
+            sw.login()
+            cmd_members(sw, int(args.args[0]), args.args[1])
+
+        elif args.command == "pvid":
+            if len(args.args) != 2:
+                print("error: 'pvid' requires exactly two arguments: <port> <vlan-id>", file=sys.stderr)
+                sys.exit(1)
+            sw.login()
+            cmd_pvid(sw, int(args.args[0]), int(args.args[1]))
+
+    except ConnectionError as e:
+        print(f"error: cannot connect to {sw.ip}: {e}", file=sys.stderr)
+        sys.exit(1)
+    except socket.timeout:
+        print(f"error: connection to {sw.ip} timed out", file=sys.stderr)
+        sys.exit(1)
+    except RuntimeError as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
