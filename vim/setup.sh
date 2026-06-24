@@ -28,7 +28,6 @@ sudo apt-get -y install \
 	cmake \
 	libclang-*-dev \
 	ninja-build \
-	python-dev \
 	python3-dev \
 
 # Compile YouCompleteMe
@@ -36,7 +35,7 @@ sudo apt-get -y install \
 	cd bundle/YouCompleteMe/
 	python3 ./install.py \
 		--clang-completer \
-		--gocode-completer \
+		--go-completer \
 
-#		--racer-completer \
+#		--rust-completer \
 )
