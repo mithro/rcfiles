@@ -23,9 +23,9 @@ Sets up the Go programming language environment.
 
 **Variables**:
 - `GOPATH=$HOME/gocode` - Where Go packages are downloaded
-- `GOROOT=$HOME/go` - Go runtime installation location
+- `GOROOT=$HOME/go` - Go runtime location, set **only if** a hand-installed toolchain exists at `~/go`; otherwise left unset so a system/distro `go` auto-detects its own GOROOT
 
-**PATH additions**: Adds `$GOPATH/bin` and `$GOROOT/bin` to PATH
+**PATH additions**: Adds `$GOPATH/bin` to PATH, plus `$GOROOT/bin` when the `~/go` toolchain is used
 
 ### `path`
 

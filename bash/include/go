@@ -1,6 +1,14 @@
 # Where go code is downloaded too
 declare -x GOPATH="$HOME/gocode"
-# The go runtime to use
-declare -x GOROOT="$HOME/go"
 
-PATH=$GOPATH/bin:$GOROOT/bin:$PATH
+# The go runtime to use. Only pin GOROOT when a hand-installed toolchain
+# lives in ~/go; a distro/system `go` finds its own GOROOT, and forcing a
+# wrong value breaks it (modern Go does not need GOROOT set at all).
+if [ -x "$HOME/go/bin/go" ]; then
+	declare -x GOROOT="$HOME/go"
+	PATH="$GOPATH/bin:$GOROOT/bin:$PATH"
+else
+	# Let the system `go` auto-detect GOROOT; clear any stale value.
+	unset GOROOT
+	PATH="$GOPATH/bin:$PATH"
+fi
