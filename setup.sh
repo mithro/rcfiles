@@ -19,13 +19,6 @@ if [[ "$CURRENT_ORIGIN" =~ ^https://github.com/(.*)$ ]]; then
 	git remote set-url origin "$NEW_ORIGIN"
 fi
 
-# Set Up my RC files.
-if dpkg -l ubuntu-desktop > /dev/null; then
-	SERVER=0
-else
-	SERVER=1
-fi
-
 # Detect repository location and ensure ~/rcfiles symlink exists
 # The repository can be at ~/github/mithro/rcfiles with ~/rcfiles as a symlink
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -54,6 +47,21 @@ HOSTNAME=$(hostname -f)
 DOMAIN=$(hostname -d)
 # Like mithis.com or google.com
 BASE_DOMAIN=$(hostname -f | sed -e's/.*\.\(.*\..*\)/\1/')
+SHORT_HOSTNAME="${HOSTNAME%%.*}"
+
+# Host role: default to a headless server. Physical desktops (where the real
+# clipboard lives and the GUI/desktop bits are installed) opt out via a
+# per-host include config/<short-hostname>.inc that sets SERVER=0.
+#
+# Role is a deliberate per-host policy, NOT auto-detected: e.g. desktop.buddy
+# runs a display manager yet is a server, and Ubuntu desktops can lack the
+# ubuntu-desktop metapackage -- so neither probe is reliable.
+SERVER=1
+HOST_INC="$RCFILES/config/$SHORT_HOSTNAME.inc"
+if [ -f "$HOST_INC" ]; then
+	echo "Loading per-host config: $HOST_INC"
+	source "$HOST_INC"
+fi
 
 # linkit(DIRECTORY)
 function linkit {
