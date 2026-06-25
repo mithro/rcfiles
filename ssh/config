@@ -124,7 +124,15 @@ Host *.mithis.com
 	User tim
 	IdentityFile ~/.ssh/keys/new_misc_key
 	ForwardAgent yes
-	# clipboard-over-ssh: forward clipboard socket back to local machine
+
+# clipboard-over-ssh: only the MASTER connection forwards the clipboard socket.
+# With ControlMaster auto, a 2nd multiplexed connection re-requesting this
+# RemoteForward + StreamLocalBindUnlink unlinks the master's live socket and
+# rebinds a dead one -> clipboard silently breaks for every pane (the xclip shim
+# then falls back to the headless real xclip: "Can't open display"). The exec
+# guard (ssh/bin/clipboard-forward-on-master) applies the forward only when no
+# master socket exists yet for this host, so slaves reuse the master's socket.
+Match host *.mithis.com exec "~/rcfiles/ssh/bin/clipboard-forward-on-master %h %p"
 	RemoteForward ${HOME}/.ssh/clipboard.sock ${HOME}/.ssh/clipboard-over-ssh.sock
 	StreamLocalBindUnlink yes
 

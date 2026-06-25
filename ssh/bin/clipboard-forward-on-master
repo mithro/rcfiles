@@ -1,0 +1,27 @@
+#!/bin/sh
+# clipboard-forward-on-master <host> <port>
+#
+# ssh_config `Match exec` guard: succeed (exit 0) only for the FIRST (master)
+# connection to <host>:<port>, so that ONLY the master sets up the clipboard
+# RemoteForward.
+#
+# Why: with `ControlMaster auto`, a second multiplexed connection that
+# re-requests
+#     RemoteForward ~/.ssh/clipboard.sock ~/.ssh/clipboard-over-ssh.sock
+#     StreamLocalBindUnlink yes
+# unlinks the master's *live* clipboard socket and rebinds a new one whose
+# reverse channel never wires up -- silently breaking clipboard-over-ssh for
+# every existing pane (the xclip shim then falls back to the headless real
+# xclip: "Can't open display"). Letting only the master own the forward avoids
+# the clobber; slaves reuse the master's working socket.
+#
+# The glob matches any ControlPath prefix variant: the single-dash
+# `master-%r@host:port` and the jump-host `master-%j-%r@host:port` form (which
+# renders a double dash when %j is empty). If ~/.ssh/tmp has no master socket
+# the glob stays literal, `[ -S ... ]` is false, and we exit 0 (be the master).
+host=$1
+port=$2
+for sock in "$HOME"/.ssh/tmp/master-*@"$host":"$port"; do
+	[ -S "$sock" ] && exit 1   # a master already exists -> this is a slave
+done
+exit 0                             # no master yet -> this connection is the master
