@@ -425,15 +425,27 @@ function clipboard_over_ssh {
 		return 0
 	fi
 
-	cp "$CACHED_BIN" ~/bin/clipboard-over-ssh
-	chmod 755 ~/bin/clipboard-over-ssh
+	# Install to ~/.local/bin -- the canonical location the binary's own
+	# install-remote uses, and which is in PATH. Running the installer from
+	# here makes install-remote's self-copy a no-op and pins install-local's
+	# systemd ExecStart to this stable path (the old code copied to ~/bin, a
+	# different location than where the shims land, leaving a redundant binary).
+	mkdir -p ~/.local/bin
+	cp "$CACHED_BIN" ~/.local/bin/clipboard-over-ssh
+	chmod 755 ~/.local/bin/clipboard-over-ssh
+
+	# Purge stale shims/binary from the superseded ssh-clipboard-bridge era:
+	# ~/bin precedes ~/.local/bin in PATH, so a leftover ~/bin/xclip would
+	# shadow the real ~/.local/bin shim (it is now a dangling symlink to a
+	# repo file that no longer exists).
+	rm -f ~/bin/clipboard-over-ssh ~/bin/xclip ~/bin/wl-paste
 
 	if [ $SERVER -eq 1 ]; then
-		# Remote/server: install xclip/wl-paste symlinks
-		~/bin/clipboard-over-ssh install-remote
+		# Remote/server: install xclip/wl-paste shims into ~/.local/bin.
+		~/.local/bin/clipboard-over-ssh install-remote
 	else
-		# Desktop/local: install systemd socket-activated server
-		~/bin/clipboard-over-ssh install-local
+		# Desktop/local: install the systemd socket-activated server.
+		~/.local/bin/clipboard-over-ssh install-local
 	fi
 }
 
