@@ -26,11 +26,16 @@ set -g @resurrect-capture-pane-contents 'on'
 #                    absolute path, so a plain `claude` entry would never hit).
 set -g @resurrect-processes 'ssh mosh-client claude ~claude-resume'
 
-# On every save, rewrite each Claude pane's restore command to carry its real
-# session id (~/bin/claude-resume <id>), resolved from ~/.claude/sessions/.
-# Without this, picker-launched / bare `claude` panes restore to the wrong
-# session. See ~/bin/claude-resume-save-hook.
-set -g @resurrect-hook-post-save-layout '~/bin/claude-resume-save-hook'
+# Post-save dispatcher (~/bin/resurrect-post-save), run after each save while
+# the old `last` is still in place: (1) logs every save with context to
+# <resurrect-dir>/save-events.log; (2) GUARDS against a degenerate clobber --
+# if the new save collapsed to far fewer panes than `last` (e.g. a reattach
+# autosave of an emptied session), it overwrites the new file with `last`'s
+# bytes so resurrect's cmp dedup discards it and `last` survives; (3) otherwise
+# chains ~/bin/claude-resume-save-hook to rewrite each Claude pane's restore
+# command to carry its real session id (~/bin/claude-resume <id>), so picker-
+# launched / bare `claude` panes restore to the right session.
+set -g @resurrect-hook-post-save-layout '~/bin/resurrect-post-save'
 
 set -g @continuum-save-interval '15'
 
