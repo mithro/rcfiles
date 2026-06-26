@@ -34,6 +34,16 @@ set -g @resurrect-hook-post-save-layout '~/bin/claude-resume-save-hook'
 
 set -g @continuum-save-interval '15'
 
+# Reattach grace. continuum's autosave timer (@continuum-save-last-timestamp)
+# only advances while a client is attached and FREEZES while detached, so the
+# first status tick after a detach longer than the interval saves IMMEDIATELY
+# (the gate now >= last+interval is already satisfied) -- clobbering `last` with
+# the on-screen, possibly degenerate, state before you can prefix+Ctrl-r. Push
+# the timer forward on attach (only when already stale, so the normal cadence is
+# untouched) to grant a fresh interval to restore. -ga appends, never replacing
+# an existing client-attached hook. See ~/bin/continuum-attach-grace.
+set-hook -ga client-attached 'run-shell ~/bin/continuum-attach-grace'
+
 set-environment -g TMUX_PLUGIN_MANAGER_PATH '~/.tmux/plugins/'
 
 # Guard so a host without the submodule still gets a working plain tmux.

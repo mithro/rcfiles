@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""Reset tmux-continuum's autosave timer to 'now' on attach (when stale).
+
+Bound to tmux's `client-attached` hook. continuum decides whether to autosave
+on each status-line tick via the gate `now >= @continuum-save-last-timestamp +
+@continuum-save-interval`. That timestamp only advances while a client is
+attached (the save runs from status-right); it FREEZES while detached. So when
+you reattach after a detach longer than the interval, the gate is already
+satisfied and continuum's first status tick saves IMMEDIATELY — clobbering the
+good `last` with whatever (possibly degenerate) state is on screen before you
+can prefix+Ctrl-r restore.
+
+Pushing the timestamp forward on attach (only when it's already stale, so we
+don't disturb the normal cadence) restores the full grace window continuum's
+own fresh-start seeding gives — but on reattach too. See the matching task
+"continuum attach-reset hook".
+
+stdlib-only / instant-start: this runs on every tmux attach.
+"""
+import subprocess
+import time
+
+SAVE_TS_OPTION = "@continuum-save-last-timestamp"
+INTERVAL_OPTION = "@continuum-save-interval"
+DEFAULT_INTERVAL_MINUTES = 15
+
+
+def should_reset(now, last_raw, interval_secs):
+    """True when attaching now could let continuum fire an immediate autosave.
+
+    last_raw is the raw @continuum-save-last-timestamp string ("" if unset).
+    Reset when it's unset, unparseable, or already at/over the interval — i.e.
+    exactly the cases where continuum's gate would pass on the next tick."""
+    if not last_raw:
+        return True
+    try:
+        last = int(last_raw)
+    except ValueError:
+        return True
+    return (now - last) >= interval_secs
+
+
+def _tmux_get(option, default=""):
+    try:
+        out = subprocess.run(["tmux", "show-option", "-gqv", option],
+                             capture_output=True, text=True, check=False)
+        return out.stdout.strip() or default
+    except OSError:
+        return default
+
+
+def _interval_secs():
+    raw = _tmux_get(INTERVAL_OPTION, str(DEFAULT_INTERVAL_MINUTES))
+    try:
+        return int(raw) * 60
+    except ValueError:
+        return DEFAULT_INTERVAL_MINUTES * 60
+
+
+def main():
+    now = int(time.time())
+    if should_reset(now, _tmux_get(SAVE_TS_OPTION), _interval_secs()):
+        subprocess.run(["tmux", "set-option", "-g", SAVE_TS_OPTION, str(now)],
+                       check=False)
+
+
+if __name__ == "__main__":
+    main()
