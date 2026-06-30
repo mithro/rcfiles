@@ -8,9 +8,7 @@ Host *
 	# Check for sshfp keys in DNS
 	VerifyHostKeyDNS yes
 	# Use a control channel, use -S none to disable.
-	# TODO: Restore %j once system is upgraded to OpenSSH 9.6+
-	# ControlPath ~/.ssh/tmp/master-%j-%r@%h:%p
-	ControlPath ~/.ssh/tmp/master-%r@%h:%p
+	ControlPath ~/.ssh/tmp/master-%j-%r@%h:%p
 	ControlMaster auto
 	# Keep those connections alive!
 	TCPKeepAlive yes
@@ -20,10 +18,9 @@ Host *
 	HostkeyAlgorithms +ssh-rsa
 
 
-# TODO: Restore once system is upgraded to OpenSSH 9.6+ (%j support)
-# Match exec "test -n '%j'"
-# 	UserKnownHostsFile ~/.ssh/known_hosts.%j
-# 	StrictHostKeyChecking accept-new
+Match exec "test -n '%j'"
+	UserKnownHostsFile ~/.ssh/known_hosts.%j
+ 	StrictHostKeyChecking accept-new
 
 Include ~/.ssh/config_extra
 
