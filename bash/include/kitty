@@ -2,6 +2,9 @@
 # This ensures TERM=xterm-kitty is properly set on remote hosts and
 # copies the xterm-kitty terminfo if missing, enabling 256-color and
 # truecolor support in tmux over SSH.
+# The kitten's own ControlMaster handling is disabled via kitty/ssh.conf
+# (deployed to ~/.config/kitty/ssh.conf by setup.sh kitty_conf), so the
+# ControlPath policy from ssh/config applies to kitten ssh too.
 if [ -n "$KITTY_PID" ] && command -v kitten >/dev/null 2>&1; then
     alias ssh='kitten ssh'
 fi

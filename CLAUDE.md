@@ -58,6 +58,7 @@ The `linkit()` function in `setup.sh` implements a hostname-aware configuration 
 - `vim/`: Vim configuration with Pathogen plugin manager and multiple plugins as git submodules in `vim/bundle/`
 - `tmux/`: Tmux configuration with hostname-specific overrides; TPM vendored at `tmux/plugins/tpm` (plugins clone to `~/.tmux/plugins/`); plugin block in `tmux/tmux.conf-postfix` (appended by linkit after host parts)
 - `ssh/`: SSH configuration with control socket persistence and hostname-specific settings
+- `kitty/`: kitty terminal config; `ssh.conf` (symlinked to `~/.config/kitty/ssh.conf` by `kitty_conf()`) sets `share_connections no` so the ssh kitten doesn't override the `~/.ssh/config` ControlPath with its own `-o ControlPath=$XDG_RUNTIME_DIR/kssh-*` command-line injection
 - `bin/`: Utility scripts symlinked to `~/bin/`
 - `gdb/`: GDB configuration including gdb-dashboard submodule
 - `awesome/`: Awesome window manager configuration (for desktop systems)
@@ -73,6 +74,7 @@ The `linkit()` function in `setup.sh` implements a hostname-aware configuration 
 
 **SSH Configuration:**
 - Uses ControlMaster for connection multiplexing with sockets in `~/.ssh/tmp/`
+- Inside kitty, `bash/include/kitty` aliases ssh to `kitten ssh`; `kitty/ssh.conf` disables the kitten's own connection sharing so the same `~/.ssh/tmp/` ControlPath applies there too
 - Enables older ssh-rsa algorithms for compatibility
 - Defines many host-specific configurations for personal servers, GitHub, GitLab, AWS, and TimVideos infrastructure
 - SSH keys stored in `ssh/keys/` (not tracked in main repository)

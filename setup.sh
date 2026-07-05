@@ -457,6 +457,16 @@ function clipboard_over_ssh {
 	fi
 }
 
+function kitty_conf {
+	# bash/include/kitty aliases ssh to `kitten ssh` inside kitty, and by
+	# default the ssh kitten injects its own -o ControlPath/ControlMaster
+	# options on the ssh command line, which override ~/.ssh/config and move
+	# mux masters out of ~/.ssh/tmp/. kitty/ssh.conf disables that
+	# (share_connections no) so the ssh() ControlPath policy stays in charge.
+	mkdir -p ~/.config/kitty
+	ln -sf "$RCFILES/kitty/ssh.conf" ~/.config/kitty/ssh.conf
+}
+
 function claude {
 	DOT_CLAUDE_DIR=~/github/mithro/dot-claude
 
@@ -578,6 +588,7 @@ ssh_agent
 ssh_agent_mux
 clipboard_over_ssh
 ssh
+kitty_conf
 claude
 tmux_persistence
 
