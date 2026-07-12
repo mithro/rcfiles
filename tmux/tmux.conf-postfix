@@ -36,7 +36,12 @@ set -g @resurrect-capture-pane-contents 'on'
 #   ~claude-resume — the rewritten `~/bin/claude-resume <id>` command; the ~
 #                    makes resurrect substring-match it (it starts with an
 #                    absolute path, so a plain `claude` entry would never hit).
-set -g @resurrect-processes 'ssh mosh-client claude ~claude-resume'
+#   "~sudo iotop"  — iotop runs under sudo, so the saved command is
+#                    `sudo iotop`; a plain `iotop` entry would never match.
+#                    Quoted for the space, ~ so flags still match. Restore
+#                    re-prompts for the sudo password in the pane.
+#                    (htop/top need no entry -- they're in the defaults.)
+set -g @resurrect-processes 'ssh mosh-client claude ~claude-resume "~sudo iotop"'
 
 # Post-save dispatcher (~/bin/resurrect-post-save), run after each manual save while
 # the old `last` is still in place: (1) logs every save with context to
