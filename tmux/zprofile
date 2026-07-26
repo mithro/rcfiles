@@ -150,15 +150,19 @@ if [[ ( -z "$STY" ) && (( ! -z "$SSH_CONNECTION" ) || ( x"$TERM" == x"xterm-256c
 		tmux -L main new-session -d -s default -n h "tail -f ~/.tmux-help" \; setw remain-on-exit\; send-keys C-c
 		_zlog "tmux: new-session command returned"
         fi
-	# Reap any unamed sessions which don't have anything attached
-	_zlog "tmux: reaping unnamed sessions..."
-	for session in `tmux -L main list-sessions | grep -v attached | grep '^[0-9]*:' | sed -e's/:.*//'`; do
-		_zlog "tmux: killing session $session"
-		tmux -L main kill-session -t $session;
-	done
-	# Start a new window.
+	# Attach to our own CLONE of the shared `default` session group: an
+	# independent view (own current window + pane focus) into the shared window
+	# set. `destroy-unattached keep-last` on the clone makes it self-destruct when
+	# we disconnect (it is then an unattached member of a >1-member group), while
+	# the base `default` — with destroy-unattached left at its `off` default — is
+	# always kept. tmux reaps the clone for us, so no login-time reaper is needed.
+	#
+	# (Removed: a `grep '^[0-9]*:'` reaper that only matched bare-numeric session
+	# names and so never matched modern `default-N` clones — they leaked forever.
+	# Also dropped the trailing `new-window`: in a shared group it added a window
+	# to the shared set on every login, which then outlived the reaped clone.)
 	_zlog "=== zprofile end (exec tmux) ==="
-	exec tmux -L main new-session -t default\; new-window
+	exec tmux -L main new-session -t default \; set-option destroy-unattached keep-last
 else
 	_zlog "tmux: NOT starting (conditions not met)"
         echo "Not starting tmux!"
