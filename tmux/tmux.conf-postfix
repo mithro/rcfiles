@@ -10,10 +10,18 @@
 # (pinned; updated via git, not prefix+U). Managed plugins clone OUTSIDE
 # the repo into ~/.tmux/plugins/.
 #   prefix+I install   prefix+U update
-#   prefix+Ctrl-s save (resurrect)   prefix+Ctrl-r restore
+#   prefix+M-s save (resurrect)   prefix+M-r restore
 # Restore stays MANUAL: @continuum-restore is deliberately unset.
 set -g @plugin 'tmux-plugins/tmux-resurrect'
 set -g @plugin 'tmux-plugins/tmux-continuum'
+
+# Remap resurrect's save/restore off the default prefix+Ctrl-s / prefix+Ctrl-r.
+# Ctrl-s sits right next to the prefix+s session picker: with Ctrl still held
+# from the C-a prefix chord, an intended `C-a s` becomes `C-a C-s` and fires an
+# accidental save. M-s / M-r use Alt (not the held Ctrl), so the slip can't
+# happen.
+set -g @resurrect-save 'M-s'
+set -g @resurrect-restore 'M-r'
 
 # Save pane scrollback contents...
 set -g @resurrect-capture-pane-contents 'on'
