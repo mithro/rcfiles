@@ -340,6 +340,49 @@ function gh {
 	sudo apt-get -y install gh
 }
 
+function tmux_pkg {
+	# Install the custom mithro tmux (a pinned upstream next-3.8 snapshot) from
+	# our signed apt repo. It fixes the tmux 3.7b choose-tree blank-tree bug
+	# (blank session picker whenever a session group has >=2 members). The version
+	# 3.8~git...+welland1 sorts above the distro's 3.7b-1 and below a future
+	# official 3.8-1, so apt upgrades to it now and cleanly hands back to Debian's
+	# 3.8 once that lands.
+	#
+	# SERVER-only by policy: always-on hosts run the pinned custom tmux; laptops
+	# (SERVER=0) keep the distro build. The repo base is picked at run time — the
+	# welland apt-cacher-ng proxy when reachable (cached, on-net), else the public
+	# GitHub Pages repo — so off-welland servers (e.g. desktop.buddy) work too.
+	if [ $SERVER -ne 1 ]; then
+		echo "tmux_pkg: SERVER=0 (laptop policy: keep distro tmux), skipping..."
+		return 0
+	fi
+	# Idempotent: already on the welland build?
+	if dpkg-query -W -f '${Version}' tmux | grep -q welland; then
+		echo "tmux_pkg: mithro tmux already installed, skipping..."
+		return 0
+	fi
+
+	# Prefer the welland proxy (cached); fall back to the public repo off-net.
+	local base=https://apt-proxy.welland.mithis.com/tmux
+	if ! curl -fsS --max-time 6 -o /dev/null "$base/InRelease"; then
+		base=https://mithro.github.io/tmux
+	fi
+	echo "Installing mithro tmux from $base ..."
+
+	sudo mkdir -p -m 755 /etc/apt/keyrings
+	# The published key is ASCII-armored; dearmor to a binary keyring.
+	curl -fsSL "$base/tmux.gpg" \
+		| gpg --dearmor \
+		| sudo tee /etc/apt/keyrings/mithro-tmux.gpg > /dev/null
+	sudo chmod go+r /etc/apt/keyrings/mithro-tmux.gpg
+	# deb822 source, matching the other welland mithro repos (dtbocfg, etc.).
+	printf 'Types: deb\nURIs: %s/\nSuites: ./\nComponents:\nSigned-By: /etc/apt/keyrings/mithro-tmux.gpg\n' "$base" \
+		| sudo tee /etc/apt/sources.list.d/tmux.sources > /dev/null
+
+	sudo apt-get update
+	sudo apt-get -y install tmux
+}
+
 function uv_install {
 	# Install uv Python package manager from astral.sh
 	# Check if uv is already installed
@@ -621,6 +664,7 @@ ssh_agent_mux
 clipboard_over_ssh
 ssh
 claude
+tmux_pkg
 tmux_persistence
 tmux_saver
 
