@@ -11,9 +11,19 @@
 # the repo into ~/.tmux/plugins/.
 #   prefix+I install   prefix+U update
 #   prefix+M-s save (resurrect)   prefix+M-r restore
-# Restore stays MANUAL: @continuum-restore is deliberately unset.
 set -g @plugin 'tmux-plugins/tmux-resurrect'
 set -g @plugin 'tmux-plugins/tmux-continuum'
+
+# Auto-restore the `last` save when the tmux server starts fresh (host
+# reboot / server restart). continuum.tmux reads this at load, so it must
+# be set before the run-shell loader below. Restore was previously
+# deliberately manual-only; flipped 2026-08-20 after ten64 rebooted and
+# came back with empty sessions. The degenerate-save guard
+# (resurrect-post-save) and continuum-attach-grace keep `last` trustworthy
+# enough to replay unattended; desktop.buddy has run with auto-restore on
+# since its next-3.8 adoption (2026-07-27) without incident. Manual
+# prefix+M-r restore still works as a fallback.
+set -g @continuum-restore 'on'
 
 # Remap resurrect's save/restore off the default prefix+Ctrl-s / prefix+Ctrl-r.
 # Ctrl-s sits right next to the prefix+s session picker: with Ctrl still held
