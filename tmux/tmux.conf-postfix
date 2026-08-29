@@ -10,18 +10,23 @@
 # (pinned; updated via git, not prefix+U). Managed plugins clone OUTSIDE
 # the repo into ~/.tmux/plugins/.
 #   prefix+I install   prefix+U update
-#   prefix+M-s save (resurrect)   prefix+M-r restore
-# Restore stays MANUAL: @continuum-restore is deliberately unset.
+#   prefix+M-s save (go-tmux-saver)   prefix+M-r restore (go-tmux-saver)
+#   prefix+M-S save (resurrect, fallback)   prefix+M-R restore (resurrect)
+# Restore stays MANUAL: @continuum-restore is deliberately unset. Boot-time
+# restore is go-tmux-saver's job (tmux-server.service ExecStartPost); a
+# continuum restore on top of it re-creates dead per-login clones
+# (default-NN) as persistent grouped sessions.
 set -g @plugin 'tmux-plugins/tmux-resurrect'
 set -g @plugin 'tmux-plugins/tmux-continuum'
 
 # Remap resurrect's save/restore off the default prefix+Ctrl-s / prefix+Ctrl-r.
 # Ctrl-s sits right next to the prefix+s session picker: with Ctrl still held
 # from the C-a prefix chord, an intended `C-a s` becomes `C-a C-s` and fires an
-# accidental save. M-s / M-r use Alt (not the held Ctrl), so the slip can't
-# happen.
-set -g @resurrect-save 'M-s'
-set -g @resurrect-restore 'M-r'
+# accidental save. Alt keys (not the held Ctrl) can't slip like that.
+# M-s / M-r belong to go-tmux-saver (sourced below); resurrect keeps the
+# shifted pair as the manual fallback while the two run in parallel.
+set -g @resurrect-save 'M-S'
+set -g @resurrect-restore 'M-R'
 
 # Save pane scrollback contents...
 set -g @resurrect-capture-pane-contents 'on'
@@ -62,3 +67,11 @@ set-environment -g TMUX_PLUGIN_MANAGER_PATH '~/.tmux/plugins/'
 # Guard so a host without the submodule still gets a working plain tmux.
 if-shell "test -x ~/rcfiles/tmux/plugins/tpm/tpm" \
     "run-shell ~/rcfiles/tmux/plugins/tpm/tpm"
+
+# go-tmux-saver (Go replacement for resurrect/continuum, rolling out host by
+# host). `go-tmux-saver setup` writes this snippet, which binds prefix+M-s
+# (save, background) and prefix+M-r (restore --merge). Sourced AFTER the tpm
+# loader so its bindings are the final word on those keys. Hosts without
+# go-tmux-saver simply skip it.
+if-shell "test -r ~/.config/go-tmux-saver/tmux.conf" \
+    "source-file ~/.config/go-tmux-saver/tmux.conf"
