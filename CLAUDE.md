@@ -81,9 +81,10 @@ The `linkit()` function in `setup.sh` implements a hostname-aware configuration 
 
 **Tmux Session Persistence:**
 - TPM (tmux plugin manager) is a pinned git submodule at `tmux/plugins/tpm`; managed plugins live outside the repo in `~/.tmux/plugins/` via `TMUX_PLUGIN_MANAGER_PATH`
-- tmux-resurrect + tmux-continuum: autosave every 15 minutes, restore is manual (`prefix+Ctrl-r`); `@continuum-restore` deliberately unset
+- go-tmux-saver (Go, installed from the welland apt repo) owns persistence: periodic saves via its user timer, restore on server start via `tmux-server.service` ExecStartPost, `prefix+M-s` save / `prefix+M-r` restore from its setup-managed `~/.config/go-tmux-saver/tmux.conf` (sourced last from the postfix)
+- tmux-resurrect stays as the manual-only fallback (`prefix+M-S` save / `prefix+M-R` restore); tmux-continuum was removed 2026-08-29 (redundant autosave, and its restore re-created dead per-login grouped clones)
 - Saves capture pane scrollback and relaunch whitelisted programs (resurrect defaults plus ssh, mosh-client, claude)
-- The plugin block ships in `tmux/tmux.conf-postfix`, which `linkit` appends after the base config and all host-specific parts; this ordering keeps continuum's autosave hook (prepended to `status-right` at load) from being wiped by a host `status-right` override
+- The plugin block ships in `tmux/tmux.conf-postfix`, which `linkit` appends after the base config and all host-specific parts, so the plugin loader and the go-tmux-saver bindings run last
 - `setup.sh` installs plugins headlessly via `tmux_plugins()`
 
 **Vim Configuration:**
