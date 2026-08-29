@@ -1,7 +1,8 @@
 
      Ctrl A a to detact!
-     Ctrl A Ctrl S  save sessions (resurrect; continuum autosaves every 15 min)
-     Ctrl A Ctrl R  restore sessions
+     Ctrl A Alt S   save sessions (go-tmux-saver; autosaves every 10 min)
+     Ctrl A Alt R   restore sessions (go-tmux-saver, merge)
+     Ctrl A Alt Shift S / R   resurrect save / restore (manual fallback)
      Ctrl A I       install plugins (tpm)
      Ctrl A U       update plugins (tpm)
 

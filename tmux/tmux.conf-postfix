@@ -1,10 +1,9 @@
 # ── Plugins (loaded LAST via linkit postfix) ──────────────────────────
 # setup.sh linkit() appends this file AFTER the base config and all
-# host-specific parts, so the run-shell loader below runs last and
-# continuum wraps the FINAL status-right (incl. host overrides) with its
-# autosave hook. continuum prepends #(continuum_save.sh) to status-right
-# ONCE at load; if a host status-right set ran after the loader it would
-# silently drop autosave -- hence loading here, last. See docs spec section 4.
+# host-specific parts, so the plugin loader and the go-tmux-saver snippet
+# below run last and their bindings are the final word. (The ordering was
+# originally forced by tmux-continuum's status-right autosave hook; continuum
+# was removed 2026-08-29 -- periodic saves are go-tmux-saver's timer now.)
 #
 # TPM is vendored as a git submodule at ~/rcfiles/tmux/plugins/tpm
 # (pinned; updated via git, not prefix+U). Managed plugins clone OUTSIDE
@@ -12,12 +11,12 @@
 #   prefix+I install   prefix+U update
 #   prefix+M-s save (go-tmux-saver)   prefix+M-r restore (go-tmux-saver)
 #   prefix+M-S save (resurrect, fallback)   prefix+M-R restore (resurrect)
-# Restore stays MANUAL: @continuum-restore is deliberately unset. Boot-time
-# restore is go-tmux-saver's job (tmux-server.service ExecStartPost); a
-# continuum restore on top of it re-creates dead per-login clones
-# (default-NN) as persistent grouped sessions.
+# resurrect is manual-only (no continuum): boot-time restore and periodic
+# saves are go-tmux-saver's job (tmux-server.service ExecStartPost + user
+# timer). tmux-continuum was dropped 2026-08-29 -- its restore re-created
+# dead per-login clones (default-NN) as persistent grouped sessions, and its
+# autosave duplicated go-tmux-saver's.
 set -g @plugin 'tmux-plugins/tmux-resurrect'
-set -g @plugin 'tmux-plugins/tmux-continuum'
 
 # Remap resurrect's save/restore off the default prefix+Ctrl-s / prefix+Ctrl-r.
 # Ctrl-s sits right next to the prefix+s session picker: with Ctrl still held
@@ -39,7 +38,7 @@ set -g @resurrect-capture-pane-contents 'on'
 #                    absolute path, so a plain `claude` entry would never hit).
 set -g @resurrect-processes 'ssh mosh-client claude ~claude-resume'
 
-# Post-save dispatcher (~/bin/resurrect-post-save), run after each save while
+# Post-save dispatcher (~/bin/resurrect-post-save), run after each manual save while
 # the old `last` is still in place: (1) logs every save with context to
 # <resurrect-dir>/save-events.log; (2) GUARDS against a degenerate clobber --
 # if the new save collapsed to far fewer panes than `last` (e.g. a reattach
@@ -49,18 +48,6 @@ set -g @resurrect-processes 'ssh mosh-client claude ~claude-resume'
 # command to carry its real session id (~/bin/claude-resume <id>), so picker-
 # launched / bare `claude` panes restore to the right session.
 set -g @resurrect-hook-post-save-layout '~/bin/resurrect-post-save'
-
-set -g @continuum-save-interval '15'
-
-# Reattach grace. continuum's autosave timer (@continuum-save-last-timestamp)
-# only advances while a client is attached and FREEZES while detached, so the
-# first status tick after a detach longer than the interval saves IMMEDIATELY
-# (the gate now >= last+interval is already satisfied) -- clobbering `last` with
-# the on-screen, possibly degenerate, state before you can prefix+Ctrl-r. Push
-# the timer forward on attach (only when already stale, so the normal cadence is
-# untouched) to grant a fresh interval to restore. -ga appends, never replacing
-# an existing client-attached hook. See ~/bin/continuum-attach-grace.
-set-hook -ga client-attached 'run-shell ~/bin/continuum-attach-grace'
 
 set-environment -g TMUX_PLUGIN_MANAGER_PATH '~/.tmux/plugins/'
 
