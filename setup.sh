@@ -549,6 +549,48 @@ function tmux_persistence {
 	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable tmux-server.service || true
 }
 
+function tmux_saver {
+	# All hosts. go-tmux-saver (Go replacement for tmux-resurrect/continuum)
+	# owns tmux session persistence: periodic saves via its user timer, restore
+	# on server start via a tmux-server.service drop-in, prefix+M-s / M-r from
+	# its setup-managed tmux.conf snippet (sourced by tmux/tmux.conf-postfix).
+	# Installed from the signed apt repo at https://mith.ro/go-tmux-saver/ —
+	# through the welland apt-cacher-ng proxy when reachable (cached, on-net),
+	# else the public repo directly.
+	#
+	# MUST run after tmux_persistence: `setup install` writes a drop-in under
+	# ~/.config/systemd/user/tmux-server.service.d/ and daemon-reloads.
+
+	# Hosts whose apt sources are ansible-managed (the ten64s) already carry
+	# the repo; don't fight the apt_sources role over the file.
+	if ! grep -qs 'go-tmux-saver' /etc/apt/sources.list.d/*.sources; then
+		local base=https://apt-proxy.welland.mithis.com/go-tmux-saver
+		if ! curl -fsS --max-time 6 -o /dev/null "$base/InRelease"; then
+			base=https://mith.ro/go-tmux-saver
+		fi
+		echo "Adding go-tmux-saver apt repo from $base ..."
+		sudo mkdir -p -m 755 /etc/apt/keyrings
+		# The published key is ASCII-armored; dearmor to a binary keyring.
+		curl -fsSL "$base/go-tmux-saver.gpg" \
+			| gpg --dearmor \
+			| sudo tee /etc/apt/keyrings/mithro-go-tmux-saver.gpg > /dev/null
+		sudo chmod go+r /etc/apt/keyrings/mithro-go-tmux-saver.gpg
+		printf 'Types: deb\nURIs: %s/\nSuites: ./\nSigned-By: /etc/apt/keyrings/mithro-go-tmux-saver.gpg\n' "$base" \
+			| sudo tee /etc/apt/sources.list.d/go-tmux-saver.sources > /dev/null
+		sudo apt-get update
+	fi
+	sudo apt-get -y install go-tmux-saver
+
+	# First run: create config.json + units + tmux.conf snippet, enable timers.
+	# Later runs: re-render and apply any drift (exit 1 = "drift was fixed",
+	# not an error). An existing config.json is never overwritten.
+	if [ -e ~/.config/go-tmux-saver/config.json ]; then
+		go-tmux-saver setup update || true
+	else
+		go-tmux-saver setup install
+	fi
+}
+
 # Fix permissions
 umask 022
 
@@ -580,6 +622,7 @@ clipboard_over_ssh
 ssh
 claude
 tmux_persistence
+tmux_saver
 
 if [ $SERVER -ne 1 ]; then
 	(
