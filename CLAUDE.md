@@ -85,6 +85,7 @@ The `linkit()` function in `setup.sh` implements a hostname-aware configuration 
 - Saves capture pane scrollback and relaunch whitelisted programs (resurrect defaults plus ssh, mosh-client, claude)
 - The plugin block ships in `tmux/tmux.conf-postfix`, which `linkit` appends after the base config and all host-specific parts; this ordering keeps continuum's autosave hook (prepended to `status-right` at load) from being wiped by a host `status-right` override
 - `setup.sh` installs plugins headlessly via `tmux_plugins()`
+- `setup.sh` installs go-tmux-saver from its signed apt repo and runs `go-tmux-saver setup install`/`update` via `tmux_saver()` (after `tmux_persistence()`, which owns `tmux-server.service`)
 
 **Vim Configuration:**
 - Uses Pathogen for plugin management (`vim/bundle/vim-pathogen`)
