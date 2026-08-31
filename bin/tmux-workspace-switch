@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""Switch a tmux client to its OWN clone of a workspace (session group).
+
+Bound as the prefix+s choose-tree command template. Every login is meant to
+be an independent "view" onto the shared window set: tmux gives two clients
+independent current-windows ONLY when they sit on different sessions of the
+same session group. So instead of `switch-client -t <session>` (which lands
+the client on the shared base session, yoking every client there to one
+current window), this:
+
+  1. resolves the chosen tree item (session or window) to its group's base
+     session,
+  2. creates a fresh grouped clone of it (`new-session -t base`) with
+     `destroy-unattached keep-last`, so the clone evaporates as soon as this
+     client leaves it (switch-away or detach) while the base survives,
+  3. selects the chosen window in the clone (window items only), and
+  4. switches the client to the clone.
+
+If the client is already on a clone of the target group, no new clone is
+made (the chosen window is selected in place). A client found sitting
+directly on a base/plain session is moved onto a clone even for a
+same-group target -- that is the repair path for pre-existing logins.
+
+usage: tmux-workspace-switch TARGET CLIENT
+  TARGET  choose-tree's `%%`: a session id ($5), window id (@12), or a
+          textual target like `=name`, `name`, `name:index`
+  CLIENT  the choosing client, from `#{client_name}` (e.g. /dev/pts/12)
+
+stdlib-only; must stay fast (runs on every workspace switch).
+"""
+import os
+import subprocess
+import sys
+
+def tmux_argv():
+    # run-shell children carry $TMUX (socket,pid,session). new-session
+    # refuses to run with $TMUX set (nested-session guard), so drop it and
+    # address the server by explicit socket path instead.
+    tmux_env = os.environ.pop("TMUX", "")
+    socket = tmux_env.split(",")[0] if tmux_env else ""
+    return ["tmux", "-S", socket] if socket else ["tmux", "-L", "main"]
+
+TMUX = tmux_argv()
+
+def tmux(*args):
+    return subprocess.run(TMUX + list(args), check=True,
+                          capture_output=True, text=True).stdout
+
+def rows(out):
+    return [line.split("\t") for line in out.splitlines()]
+
+def main():
+    if len(sys.argv) != 3:
+        sys.exit(__doc__.strip().splitlines()[0]
+                 + "\nusage: tmux-workspace-switch TARGET CLIENT")
+    target, client = sys.argv[1], sys.argv[2]
+
+    # id -> name/group/index maps for resolving every %% form.
+    sessions = {}   # session_name -> group ('' when ungrouped)
+    by_sid = {}     # $id -> session_name
+    for sid, name, group in rows(tmux(
+            "list-sessions", "-F",
+            "#{session_id}\t#{session_name}\t#{session_group}")):
+        sessions[name] = group
+        by_sid[sid] = name
+    by_wid = {}     # @id -> (session_name, window_index)
+    for wid, sid, idx in rows(tmux(
+            "list-windows", "-a", "-F",
+            "#{window_id}\t#{session_id}\t#{window_index}")):
+        by_wid[wid] = (by_sid[sid], idx)
+
+    # Resolve TARGET to (session_name, window_index or None).
+    window = None
+    if target.startswith("$"):
+        sess = by_sid.get(target)
+    elif target.startswith("@"):
+        sess, window = by_wid.get(target, (None, None))
+    else:
+        sess = target.lstrip("=")
+        if ":" in sess:
+            sess, window = sess.split(":", 1)
+            window = window.split(".", 1)[0]  # drop any pane part
+    if sess is None or sess not in sessions:
+        sys.exit(f"tmux-workspace-switch: unknown target {target!r}")
+
+    def group_key(name):
+        return sessions[name] or name
+
+    current = tmux("display-message", "-p", "-c", client,
+                   "-F", "#{client_session}").strip()
+    # "Proper clone" = a grouped session that is not the group's base.
+    on_own_clone = (current in sessions and sessions[current]
+                    and current != sessions[current])
+
+    if current in sessions and group_key(current) == group_key(sess) \
+            and on_own_clone:
+        if window is not None:
+            tmux("select-window", "-t", f"={current}:{window}")
+        return
+
+    base = group_key(sess)
+    # Target the clone by session id throughout: `-t =name` exact matching
+    # is unreliable for grouped-clone names like "A-1" (observed on
+    # next-3.8: "no such session: =A-1").
+    clone = tmux("new-session", "-d", "-t", f"={base}",
+                 "-P", "-F", "#{session_id}").strip()
+    if window is not None:
+        tmux("select-window", "-t", f"{clone}:{window}")
+    tmux("switch-client", "-c", client, "-t", clone)
+    # ONLY after the client is on it: destroy-unattached on a still-detached
+    # session reaps it immediately (observed on next-3.8), so setting this
+    # before switch-client destroys the clone under us.
+    tmux("set-option", "-t", clone, "destroy-unattached", "keep-last")
+
+if __name__ == "__main__":
+    main()
