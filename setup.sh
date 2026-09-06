@@ -470,6 +470,27 @@ function claude {
 	fi
 }
 
+function claude_teleport {
+	# Move an in-progress Claude Code session between machines
+	# (https://github.com/mithro/go-claude-teleport). Installed from the
+	# project's own apt repository so it updates with the rest of the system.
+	echo "Installing claude-teleport..."
+
+	# Add the go-claude-teleport apt repository. It is a flat, per-suite repo
+	# of a single static binary; that binary is suite-independent, so the
+	# trixie suite is used on every machine (Debian and Ubuntu alike).
+	sudo install -d -m0755 /etc/apt/keyrings
+	curl -fsSL https://mithro.github.io/go-claude-teleport/go-claude-teleport.gpg \
+		| sudo tee /etc/apt/keyrings/go-claude-teleport.gpg > /dev/null
+	sudo chmod go+r /etc/apt/keyrings/go-claude-teleport.gpg
+	echo "deb [signed-by=/etc/apt/keyrings/go-claude-teleport.gpg] https://mithro.github.io/go-claude-teleport/trixie/ ./" \
+		| sudo tee /etc/apt/sources.list.d/go-claude-teleport.list > /dev/null
+
+	# Update and install (apt-get install upgrades to the newest published).
+	sudo apt-get update
+	sudo apt-get -y install claude-teleport
+}
+
 function tmux_persistence {
 	# All hosts. Run the tmux server (and the ssh-agent it fronts) as lingering
 	# systemd --user units so they survive any login/logout, SSH disconnect, or
@@ -559,6 +580,7 @@ ssh_agent_mux
 clipboard_over_ssh
 ssh
 claude
+claude_teleport
 tmux_persistence
 
 if [ $SERVER -ne 1 ]; then
