@@ -2,6 +2,9 @@ tmp
 *.sw*
 .worktrees
 
+# Development virtualenv built by `make venv`
+.venv
+
 # Machine-local Claude Code settings (the .local. suffix = not shared)
 .claude/settings.local.json
 # Per-host SSH key symlinks pointing into ~/.ssh (dead pointers elsewhere)

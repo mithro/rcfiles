@@ -4,8 +4,20 @@ name: Quality Checks
 on:
   push:
     branches: [master, main]
+  # Deliberately unfiltered: `branches:` here matches the BASE branch, so
+  # restricting it to master/main skipped every stacked pull request -- a PR
+  # targeting another feature branch got no checks at all. That matters more
+  # now these jobs are the only definition of the quality gate.
   pull_request:
-    branches: [master, main]
+
+# Every job drives the same make targets a developer runs locally, against the
+# same uv-built virtualenv (see the Makefile). Keeping one definition of the
+# tool set and the exclusion lists is what stops local and CI results from
+# quietly disagreeing -- they had already diverged when this replaced the
+# hand-rolled pip install steps and the shellcheck action.
+#
+# setup-uv is pinned to an exact release because the action publishes no moving
+# major tag.
 
 jobs:
   shellcheck:
@@ -16,18 +28,12 @@ jobs:
         with:
           submodules: false  # Don't check submodules
 
-      - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@master
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
-          scandir: '.'
-          severity: warning
-          ignore_paths: >-
-            vim/bundle
-            vim/bundle-disable
-            gdb/gdb-dashboard
-            tmux/plugins/tpm
-          ignore_names: >-
-            zprofile
+          enable-cache: true
+
+      - name: Run ShellCheck
+        run: make shellcheck
 
   python-quality:
     name: Python Quality
@@ -37,23 +43,15 @@ jobs:
         with:
           submodules: false  # Don't check submodules
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
-          python-version: '3.x'
-
-      - name: Install ruff
-        run: pip install ruff
+          enable-cache: true
 
       - name: Run ruff linter
-        run: |
-          # Lint Python files, excluding submodules
-          ruff check python/ bin/*.py backup/*.py --exclude vim/ --exclude gdb/
+        run: make python-lint
 
       - name: Run ruff formatter check
-        run: |
-          # Check formatting, excluding submodules
-          ruff format --check python/ bin/*.py backup/*.py --exclude vim/ --exclude gdb/
+        run: make python-format
 
   yaml-quality:
     name: YAML Quality
@@ -63,18 +61,12 @@ jobs:
         with:
           submodules: false
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
-          python-version: '3.x'
-
-      - name: Install yamllint
-        run: pip install yamllint
+          enable-cache: true
 
       - name: Run yamllint
-        run: |
-          # Lint YAML files using .yamllint config
-          yamllint -c .yamllint .github/
+        run: make yaml-lint
 
   file-quality:
     name: File Quality Checks
@@ -84,25 +76,26 @@ jobs:
         with:
           submodules: false
 
-      - name: Check for trailing whitespace
-        run: |
-          # Check for trailing whitespace in shell and Python files
-          # Exclude submodules and generated files
-          if git grep -n '[[:space:]]$' -- \
-            '*.sh' '*.py' '*.bash' \
-            ':!vim/bundle*' \
-            ':!gdb/gdb-dashboard' \
-            ':!.git*'; then
-            echo "Error: Trailing whitespace found"
-            exit 1
-          fi
+      # No uv needed: these checks are pure git grep.
+      - name: Check trailing whitespace and tabs
+        run: make file-checks
 
-      - name: Check for tabs in Python files
-        run: |
-          # Python should use spaces, not tabs
-          if git grep -n $'\t' -- '*.py' \
-            ':!vim/bundle*' \
-            ':!gdb/gdb-dashboard'; then
-            echo "Error: Tabs found in Python files (use spaces)"
-            exit 1
-          fi
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+
+      # ssh/tests exercises tmux/zprofile, which is a zsh script. Not installed
+      # on ubuntu-latest by default.
+      - name: Install zsh
+        run: sudo apt-get update && sudo apt-get install -y zsh
+
+      - name: Run tests
+        run: make test
