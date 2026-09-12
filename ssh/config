@@ -2,6 +2,13 @@
 #Host 192.168.178.2
 #    KexAlgorithms +diffie-hellman-group1-sha1,diffie-hellman-group14-sha1
 
+# Machine-local configuration, read FIRST so it can override anything below
+# (ssh uses the first-obtained value for most keywords). Must stay ahead of the
+# "Host *" block and outside every Host/Match block: directives -- Include
+# among them -- belong to the preceding block, so an Include placed after a
+# Match only fires when that Match succeeds.
+Include ~/.ssh/config_extra
+
 # Default Options
 Host *
 	CanonicalizeHostname no
@@ -22,7 +29,6 @@ Match exec "test -n '%j'"
 	UserKnownHostsFile ~/.ssh/known_hosts.%j
  	StrictHostKeyChecking accept-new
 
-Include ~/.ssh/config_extra
 
 ## Tunnels
 # ------------------------------------------------------
