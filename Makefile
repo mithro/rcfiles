@@ -96,18 +96,21 @@ test: $(VENV_STAMP)
 	echo "✓ All $$found test file(s) passed"
 
 # ShellCheck - shell script linting
+#
+# Enumerate with git, not find. `find .` walks the working tree, so it also
+# linted gitignored build artifacts -- tmux-build/build/ holds an unpacked tmux
+# source tree, which is 263 extra shell scripts. CI works from a fresh clone
+# and never saw them, so `make shellcheck` failed locally for anyone who had
+# built tmux while passing in CI: exactly the local/CI disagreement these
+# targets exist to prevent.
+#
+# git ls-files enumerates precisely what CI checks out. It honours .gitignore
+# and omits submodule contents, which is what the old -path exclusions
+# (vim/bundle, gdb/gdb-dashboard, tmux/plugins/tpm) were doing by hand.
 shellcheck: | $(VENV_STAMP)
 	@echo "Running ShellCheck..."
-	@find . -type f \
-		! -path '*/.git/*' \
-		! -path '*/vim/bundle/*' \
-		! -path '*/vim/bundle-disable/*' \
-		! -path '*/gdb/gdb-dashboard/*' \
-		! -path '*/tmux/plugins/tpm/*' \
-		! -path '*/.venv/*' \
-		! -name 'zprofile' \
-		\( -name '*.sh' -o -name '*.bash' \) \
-		-exec $(SHELLCHECK) --severity=warning {} +
+	@git ls-files -z '*.sh' '*.bash' \
+		| xargs -0 --no-run-if-empty $(SHELLCHECK) --severity=warning
 	@echo "✓ ShellCheck passed"
 
 # Python linting with ruff
