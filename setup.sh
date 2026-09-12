@@ -672,22 +672,47 @@ function tmux_saver {
 	# Hosts whose apt sources are ansible-managed (the ten64s) already carry
 	# the repo; don't fight the apt_sources role over the file.
 	if ! grep -qs 'go-tmux-saver' /etc/apt/sources.list.d/*.sources; then
+		# Each suite is a SEPARATE flat repository, so the suite is part of the
+		# path -- the repo root has no Release file and apt 404s on it. The
+		# package is a static Go binary depending only on tmux (>= 3.5), so the
+		# trixie suite is used on every machine, Debian and Ubuntu alike (same
+		# reasoning as claude_teleport above). Detecting the suite instead would
+		# skip every Ubuntu host, which is not what this step is for.
+		local suite=trixie
 		local base=https://apt-proxy.welland.mithis.com/go-tmux-saver
-		if ! curl -fsS --max-time 6 -o /dev/null "$base/InRelease"; then
+		if ! curl -fsSL --max-time 6 -o /dev/null "$base/$suite/InRelease"; then
 			base=https://mith.ro/go-tmux-saver
 		fi
-		echo "Adding go-tmux-saver apt repo from $base ..."
+		if ! curl -fsSL --max-time 15 -o /dev/null "$base/$suite/InRelease"; then
+			echo "tmux_saver: repo unreachable at $base/$suite, skipping install" >&2
+			return 0
+		fi
+		if ! command -v gpg > /dev/null; then
+			echo "tmux_saver: gpg not available to dearmor the key, skipping" >&2
+			return 0
+		fi
+		echo "Adding go-tmux-saver apt repo from $base/$suite ..."
 		sudo mkdir -p -m 755 /etc/apt/keyrings
 		# The published key is ASCII-armored; dearmor to a binary keyring.
 		curl -fsSL "$base/go-tmux-saver.gpg" \
 			| gpg --dearmor \
 			| sudo tee /etc/apt/keyrings/mithro-go-tmux-saver.gpg > /dev/null
 		sudo chmod go+r /etc/apt/keyrings/mithro-go-tmux-saver.gpg
-		printf 'Types: deb\nURIs: %s/\nSuites: ./\nSigned-By: /etc/apt/keyrings/mithro-go-tmux-saver.gpg\n' "$base" \
+		printf 'Types: deb\nURIs: %s/%s/\nSuites: ./\nSigned-By: /etc/apt/keyrings/mithro-go-tmux-saver.gpg\n' "$base" "$suite" \
 			| sudo tee /etc/apt/sources.list.d/go-tmux-saver.sources > /dev/null
-		sudo apt-get update
+		# Non-fatal: remove the source again rather than leave a broken one
+		# wedging every later apt-get on the machine.
+		if ! sudo apt-get update; then
+			echo "tmux_saver: apt-get update failed, skipping install" >&2
+			sudo rm -f /etc/apt/sources.list.d/go-tmux-saver.sources
+			sudo apt-get update || true
+			return 0
+		fi
 	fi
-	sudo apt-get -y install go-tmux-saver
+	if ! sudo apt-get -y install go-tmux-saver; then
+		echo "tmux_saver: install failed, skipping setup" >&2
+		return 0
+	fi
 
 	# First run: create config.json + units + tmux.conf snippet, enable timers.
 	# Later runs: re-render and apply any drift (exit 1 = "drift was fixed",
