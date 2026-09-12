@@ -73,13 +73,27 @@ _zlog "acquiring flock..."
 			_zlog "forwarded symlink: skipped (points to mux or local agent)"
 		fi
 	else
-		# No forwarded agent — point at local agent so ssh-agent-mux
-		# doesn't warn about a missing upstream socket.
+		# No working forwarded agent of our own. The policy is "last login
+		# WITH a working forward wins", so do NOT disturb a symlink that
+		# already points at another session's live forwarded agent.
+		#
+		# A mosh login always lands here: `mosh` runs `ssh <host> mosh-server
+		# new ...`, mosh-server daemonises and the launcher ssh exits, at
+		# which point sshd unlinks the forwarded agent socket it created. The
+		# orphaned mosh-server still carries that now-dead path and passes it
+		# down in SSH_AUTH_SOCK. Overwriting here stripped the forwarded keys
+		# out of the mux for a still-connected ssh session.
 		LOCAL_AGENT_SOCK="$HOME/.ssh/agent/local.sock"
-		if [ -S "$LOCAL_AGENT_SOCK" ]; then
+		if [ -S "$FORWARDED_AGENT_SOCK" ]; then
+			# -S follows the symlink, so this is true only for a live target.
+			_zlog "forwarded symlink: no forwarded agent, keeping live target -> $(readlink -f "$FORWARDED_AGENT_SOCK")"
+		elif [ -S "$LOCAL_AGENT_SOCK" ]; then
+			# Dangling or absent: repairing a broken pointer is not
+			# overwriting a working forward. Keeps ssh-agent-mux from
+			# logging a missing upstream socket on every request.
 			ln -s "$LOCAL_AGENT_SOCK" "$FORWARDED_AGENT_SOCK.tmp.$$"
 			mv -f "$FORWARDED_AGENT_SOCK.tmp.$$" "$FORWARDED_AGENT_SOCK"
-			_zlog "forwarded symlink: no forwarded agent, fallback -> $LOCAL_AGENT_SOCK"
+			_zlog "forwarded symlink: no forwarded agent, repaired -> $LOCAL_AGENT_SOCK"
 		else
 			_zlog "forwarded symlink: no valid forwarded socket and no local agent"
 		fi

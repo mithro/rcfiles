@@ -43,7 +43,8 @@ ssh-agent-mux is a read-only multiplexer: it forwards `list-keys` and `sign` req
 - Mutating operations (add key, `-d`, `-D`, `-x`, `-X`): Redirected to `~/.ssh/agent/local.sock`
 
 **`../tmux/zprofile`** — Login hook (runs on SSH login, before tmux):
-- Updates forwarded agent symlink to current sshd socket
+- Repoints the forwarded agent symlink at this login's sshd socket, but **only
+  if this login actually has a working forwarded agent** (see Design Decisions)
 - Ensures systemd user services are started (`systemctl --user start`)
 - Waits for mux socket to appear
 - Serialized with `flock` to prevent races from concurrent SSH logins
@@ -93,3 +94,14 @@ SSH sessions.
 - **Atomic symlinks** (`ln -s tmp.$$ && mv -f`): Prevents races when multiple SSH sessions update the forwarded agent symlink simultaneously.
 - **`9>&-` on daemon launches**: The flock block uses fd 9; without closing it, child daemons inherit the lock and hold it forever, hanging subsequent logins.
 - **`/proc/PID/comm` validation**: A plain `ssh-agent` accidentally bound to `mux.sock` satisfies "PID alive + socket exists" but doesn't multiplex. Checking the process name catches this.
+- **Only a working forward may repoint `forwarded-agent.sock`** ("last login *with a working forward* wins"): a login without one leaves the symlink alone, and repairs it to `local.sock` only when it is dangling or absent. **A mosh login always has a dead forward**: `mosh` runs `ssh <host> mosh-server new ...`, mosh-server daemonises, and the launcher ssh exits — at which point sshd unlinks the forwarded agent socket it created. The orphaned mosh-server still carries that dead path and hands it to the login shell, so `SSH_AUTH_SOCK` is non-empty but names a socket that no longer exists. Before this rule, connecting a mosh session repointed the symlink at the local agent and silently stripped the forwarded keys out of the mux for a *still-connected* `ssh -A` session.
+
+### Tests
+
+`ssh/tests/test_forwarded_agent_symlink.py` runs the real, unmodified
+`tmux/zprofile` against a sandbox `$HOME` (with PATH stubs for `tmux` and
+`systemctl`) and asserts on the resulting symlink, covering each case above:
+
+```bash
+uv run ssh/tests/test_forwarded_agent_symlink.py
+```
