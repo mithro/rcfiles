@@ -4,8 +4,11 @@ name: Quality Checks
 on:
   push:
     branches: [master, main]
+  # Deliberately unfiltered: `branches:` here matches the BASE branch, so
+  # restricting it to master/main skipped every stacked pull request -- a PR
+  # targeting another feature branch got no checks at all. That matters more
+  # now these jobs are the only definition of the quality gate.
   pull_request:
-    branches: [master, main]
 
 # Every job drives the same make targets a developer runs locally, against the
 # same uv-built virtualenv (see the Makefile). Keeping one definition of the
