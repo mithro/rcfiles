@@ -170,32 +170,32 @@ function ssh {
 	fi
 
 	# Update the keys directory with something.
-	while true; do
-		read -p "Get git ssh keys? " yn
-		case $yn in
-		[Yy]* )
-			(
-				cd $RCFILES
-				# Clear out any old keys
-				if [ ! -d ssh/keys/.git ]; then
-					rm -rf ssh/keys || true
-					git clone git+ssh://github.com/mithro/rcfiles-sshkeys.git ssh/keys
-				fi
-			)
-			break;;
-		[Nn]* )
-			# Generate a local key if it doesn't exist
-			if [ ! -f ~/.ssh/id_rsa ]; then
-				ssh-keygen -t rsa -f ~/.ssh/id_rsa
-			fi
-			# Link up the misc_key and new_misc_key
-			mkdir -p $RCFILES/ssh/keys
-			ln -sf ~/.ssh/id_rsa $RCFILES/ssh/keys/misc_key
-			ln -sf ~/.ssh/id_rsa $RCFILES/ssh/keys/new_misc_key
-			break;;
-		* ) echo "Please answer yes or no.";;
-		esac
-	done
+	#while true; do
+	#	read -p "Get git ssh keys? " yn
+	#	case $yn in
+	#	[Yy]* )
+	#		(
+	#			cd $RCFILES
+	#			# Clear out any old keys
+	#			if [ ! -d ssh/keys/.git ]; then
+	#				rm -rf ssh/keys || true
+	#				git clone git+ssh://github.com/mithro/rcfiles-sshkeys.git ssh/keys
+	#			fi
+	#		)
+	#		break;;
+	#	[Nn]* )
+	#		# Generate a local key if it doesn't exist
+	#		if [ ! -f ~/.ssh/id_rsa ]; then
+	#			ssh-keygen -t rsa -f ~/.ssh/id_rsa
+	#		fi
+	#		# Link up the misc_key and new_misc_key
+	#		mkdir -p $RCFILES/ssh/keys
+	#		ln -sf ~/.ssh/id_rsa $RCFILES/ssh/keys/misc_key
+	#		ln -sf ~/.ssh/id_rsa $RCFILES/ssh/keys/new_misc_key
+	#		break;;
+	#	* ) echo "Please answer yes or no.";;
+	#	esac
+	#done
 
 	# Fix key permissions
 	if ls "$RCFILES"/ssh/keys/* > /dev/null; then
