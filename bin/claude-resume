@@ -143,6 +143,33 @@ def maybe_chdir(meta, transcript):
             pass
 
 
+def announce_decision(sid, tty, stdin_isatty, read_line, out):
+    """Wait for the confirm keypress, print a clear line for it, and return
+    'resume' or 'skip'.
+
+    read_line() is input()-like: it returns the typed line, or raises
+    KeyboardInterrupt/EOFError on Ctrl-C/Ctrl-D. When stdin is not a tty
+    (resurrect's send-keys restore — there is no human keypress to wait on) we
+    announce and resume rather than block. Either way the chosen action prints
+    a visible line, so a restored pane never silently exec's into claude."""
+    dim = "\033[2m" if tty else ""
+    grn = "\033[32m" if tty else ""
+    rst = "\033[0m" if tty else ""
+    if stdin_isatty:
+        try:
+            read_line()
+        except (KeyboardInterrupt, EOFError):
+            out.write(f"{dim}↩ skipped — shell ready{rst}\n")
+            out.flush()
+            return "skip"
+    if sid:
+        out.write(f"{grn}↳ resuming{rst} {dim}{sid[:8]}…{rst}\n")
+    else:
+        out.write(f"{grn}↳ opening resume picker{rst}{dim}…{rst}\n")
+    out.flush()
+    return "resume"
+
+
 def main():
     sid = sys.argv[1].strip() if len(sys.argv) > 1 else ""
     if sid and UUID_RE.match(sid):
@@ -156,14 +183,8 @@ def main():
     tty = sys.stdout.isatty()
     render(sid, meta, tty)
 
-    if sys.stdin.isatty():
-        try:
-            input()
-        except (KeyboardInterrupt, EOFError):
-            dim = "\033[2m" if tty else ""
-            rst = "\033[0m" if tty else ""
-            sys.stdout.write(f"{dim}↩ skipped — shell ready{rst}\n")
-            return
+    if announce_decision(sid, tty, sys.stdin.isatty(), input, sys.stdout) == "skip":
+        return
 
     if meta:
         maybe_chdir(meta, transcript)

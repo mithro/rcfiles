@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""tmux-resurrect @resurrect-hook-post-save-layout dispatcher.
+
+resurrect calls this right after it writes a new save file but BEFORE it points
+`last` at it (and only promotes the new file to `last` if it differs from the
+current `last`). That timing lets this script do three things, in order:
+
+  1. LOG every save with context (pane/window counts, attached clients, server
+     uptime, seconds-since-last-save) to <resurrect-dir>/save-events.log, so an
+     on-reattach immediate save or a degenerate clobber is captured red-handed.
+  2. GUARD against a degenerate clobber: if the new save collapsed to far fewer
+     panes than the current `last` (e.g. Claude panes exited while detached and
+     a reattach autosave fired), overwrite the new file with the current `last`'s
+     bytes. resurrect's own `! cmp -s` dedup then discards the new file and
+     leaves `last` untouched — no patching of vendored code.
+  3. Otherwise REWRITE Claude panes' restore commands via claude-resume-save-hook
+     (the prior behaviour this hook used to point at directly).
+
+Fail-safe by construction: every external step is wrapped; on any trouble it
+falls through to the rewrite and never vetoes, so a bug here can never break a
+save. stdlib-only / instant-start.
+"""
+import os
+import shutil
+import subprocess
+import sys
+import time
+
+REWRITE_ENV = "RESURRECT_POST_SAVE_REWRITE"   # test seam: override the rewrite cmd
+LOG_NAME = "save-events.log"
+MIN_RICH_OPTION = "@resurrect-guard-min-panes"   # last must have >= this to protect
+DIVISOR_OPTION = "@resurrect-guard-divisor"      # block if new*divisor <= last
+DEFAULT_MIN_RICH = 5
+DEFAULT_DIVISOR = 3
+
+
+def count_layout_text(text):
+    """(panes, windows) by exact first-tab-field type, so a 'window' substring
+    inside a pane_title can't inflate the count."""
+    panes = windows = 0
+    for line in text.splitlines():
+        kind = line.split("\t", 1)[0]
+        if kind == "pane":
+            panes += 1
+        elif kind == "window":
+            windows += 1
+    return panes, windows
+
+
+def count_layout(path):
+    with open(path) as fh:
+        return count_layout_text(fh.read())
+
+
+def is_degenerate(new_panes, last_panes, min_rich=DEFAULT_MIN_RICH,
+                  divisor=DEFAULT_DIVISOR):
+    """True when the new save collapsed enough to look like an accidental
+    clobber of a still-rich `last`. Conservative: only fires when `last` was
+    rich (>= min_rich panes) AND the new save kept <= 1/divisor of them."""
+    if last_panes < min_rich:
+        return False
+    return new_panes * divisor <= last_panes
+
+
+def _tmux(*args):
+    try:
+        r = subprocess.run(["tmux", *args], capture_output=True, text=True,
+                           check=False)
+        return r.stdout
+    except OSError:
+        return ""
+
+
+def _tmux_show(opt):
+    return _tmux("show-option", "-gqv", opt).strip()
+
+
+def _int_option(opt, default):
+    raw = _tmux_show(opt)
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def _rewrite_cmd():
+    override = os.environ.get(REWRITE_ENV)
+    if override:
+        return [override]
+    here = os.path.dirname(os.path.realpath(__file__))
+    return [os.path.join(here, "claude-resume-save-hook")]
+
+
+def run_rewrite(savefile):
+    try:
+        subprocess.run(_rewrite_cmd() + [savefile], check=False)
+    except OSError:
+        pass
+
+
+def log_event(rdir, fields):
+    try:
+        with open(os.path.join(rdir, LOG_NAME), "a") as fh:
+            fh.write("\t".join(str(f) for f in fields) + "\n")
+    except OSError:
+        pass
+
+
+def main():
+    if len(sys.argv) < 2:
+        return
+    savefile = sys.argv[1]
+    rdir = os.path.dirname(os.path.abspath(savefile))
+    lastlink = os.path.join(rdir, "last")
+    now = int(time.time())
+
+    # --- metrics (best-effort; a read error must NOT look like 0 panes) ---
+    try:
+        new_panes, new_win = count_layout(savefile)
+    except OSError:
+        new_panes, new_win = -1, -1
+    lastfile, last_panes, last_win = None, 0, 0
+    if os.path.exists(lastlink):
+        try:
+            lastfile = os.path.realpath(lastlink)
+            last_panes, last_win = count_layout(lastfile)
+        except OSError:
+            lastfile, last_panes, last_win = None, 0, 0
+
+    save_ts = _tmux_show("@continuum-save-last-timestamp")
+    since_save = now - int(save_ts) if save_ts.isdigit() else -1
+    clients = sum(1 for ln in _tmux("list-clients").splitlines() if ln.strip())
+    start = _tmux("display-message", "-p", "#{start_time}").strip()
+    uptime = now - int(start) if start.isdigit() else -1
+
+    # --- guard decision (only when we have a valid new count and a last) ---
+    min_rich = _int_option(MIN_RICH_OPTION, DEFAULT_MIN_RICH)
+    divisor = _int_option(DIVISOR_OPTION, DEFAULT_DIVISOR)
+    vetoed = False
+    if lastfile and new_panes >= 0 and is_degenerate(new_panes, last_panes,
+                                                      min_rich, divisor):
+        try:
+            shutil.copyfile(lastfile, savefile)   # resurrect's cmp -s then discards it
+            vetoed = True
+        except OSError:
+            vetoed = False
+    if not vetoed:
+        run_rewrite(savefile)
+
+    log_event(rdir, [
+        time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(now)), now,
+        "BLOCKED-degenerate" if vetoed else "kept",
+        f"panes={new_panes}", f"win={new_win}",
+        f"last_panes={last_panes}", f"last_win={last_win}",
+        f"clients={clients}", f"uptime_s={uptime}", f"since_save_s={since_save}",
+        os.path.basename(savefile),
+    ])
+
+
+if __name__ == "__main__":
+    main()

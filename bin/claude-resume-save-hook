@@ -17,7 +17,7 @@ holds the true current id no matter how Claude was launched.
 Fail-safe by construction: any error leaves the save file exactly as resurrect
 wrote it (we only os.replace() a fully-built new copy, and never raise).
 
-stdlib-only python3 so it adds ~no latency to continuum's 15-min autosave.
+stdlib-only python3 so it adds ~no latency to a resurrect save.
 """
 import json
 import os

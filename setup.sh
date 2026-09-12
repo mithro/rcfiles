@@ -340,6 +340,49 @@ function gh {
 	sudo apt-get -y install gh
 }
 
+function tmux_pkg {
+	# Install the custom mithro tmux (a pinned upstream next-3.8 snapshot) from
+	# our signed apt repo. It fixes the tmux 3.7b choose-tree blank-tree bug
+	# (blank session picker whenever a session group has >=2 members). The version
+	# 3.8~git...+welland1 sorts above the distro's 3.7b-1 and below a future
+	# official 3.8-1, so apt upgrades to it now and cleanly hands back to Debian's
+	# 3.8 once that lands.
+	#
+	# SERVER-only by policy: always-on hosts run the pinned custom tmux; laptops
+	# (SERVER=0) keep the distro build. The repo base is picked at run time — the
+	# welland apt-cacher-ng proxy when reachable (cached, on-net), else the public
+	# GitHub Pages repo — so off-welland servers (e.g. desktop.buddy) work too.
+	if [ $SERVER -ne 1 ]; then
+		echo "tmux_pkg: SERVER=0 (laptop policy: keep distro tmux), skipping..."
+		return 0
+	fi
+	# Idempotent: already on the welland build?
+	if dpkg-query -W -f '${Version}' tmux | grep -q welland; then
+		echo "tmux_pkg: mithro tmux already installed, skipping..."
+		return 0
+	fi
+
+	# Prefer the welland proxy (cached); fall back to the public repo off-net.
+	local base=https://apt-proxy.welland.mithis.com/tmux
+	if ! curl -fsS --max-time 6 -o /dev/null "$base/InRelease"; then
+		base=https://mithro.github.io/tmux
+	fi
+	echo "Installing mithro tmux from $base ..."
+
+	sudo mkdir -p -m 755 /etc/apt/keyrings
+	# The published key is ASCII-armored; dearmor to a binary keyring.
+	curl -fsSL "$base/tmux.gpg" \
+		| gpg --dearmor \
+		| sudo tee /etc/apt/keyrings/mithro-tmux.gpg > /dev/null
+	sudo chmod go+r /etc/apt/keyrings/mithro-tmux.gpg
+	# deb822 source, matching the other welland mithro repos (dtbocfg, etc.).
+	printf 'Types: deb\nURIs: %s/\nSuites: ./\nComponents:\nSigned-By: /etc/apt/keyrings/mithro-tmux.gpg\n' "$base" \
+		| sudo tee /etc/apt/sources.list.d/tmux.sources > /dev/null
+
+	sudo apt-get update
+	sudo apt-get -y install tmux
+}
+
 function uv_install {
 	# Install uv Python package manager from astral.sh
 	# Check if uv is already installed
@@ -559,6 +602,48 @@ function tmux_persistence {
 	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable tmux-server.service || true
 }
 
+function tmux_saver {
+	# All hosts. go-tmux-saver (Go replacement for tmux-resurrect/continuum)
+	# owns tmux session persistence: periodic saves via its user timer, restore
+	# on server start via a tmux-server.service drop-in, prefix+M-s / M-r from
+	# its setup-managed tmux.conf snippet (sourced by tmux/tmux.conf-postfix).
+	# Installed from the signed apt repo at https://mith.ro/go-tmux-saver/ —
+	# through the welland apt-cacher-ng proxy when reachable (cached, on-net),
+	# else the public repo directly.
+	#
+	# MUST run after tmux_persistence: `setup install` writes a drop-in under
+	# ~/.config/systemd/user/tmux-server.service.d/ and daemon-reloads.
+
+	# Hosts whose apt sources are ansible-managed (the ten64s) already carry
+	# the repo; don't fight the apt_sources role over the file.
+	if ! grep -qs 'go-tmux-saver' /etc/apt/sources.list.d/*.sources; then
+		local base=https://apt-proxy.welland.mithis.com/go-tmux-saver
+		if ! curl -fsS --max-time 6 -o /dev/null "$base/InRelease"; then
+			base=https://mith.ro/go-tmux-saver
+		fi
+		echo "Adding go-tmux-saver apt repo from $base ..."
+		sudo mkdir -p -m 755 /etc/apt/keyrings
+		# The published key is ASCII-armored; dearmor to a binary keyring.
+		curl -fsSL "$base/go-tmux-saver.gpg" \
+			| gpg --dearmor \
+			| sudo tee /etc/apt/keyrings/mithro-go-tmux-saver.gpg > /dev/null
+		sudo chmod go+r /etc/apt/keyrings/mithro-go-tmux-saver.gpg
+		printf 'Types: deb\nURIs: %s/\nSuites: ./\nSigned-By: /etc/apt/keyrings/mithro-go-tmux-saver.gpg\n' "$base" \
+			| sudo tee /etc/apt/sources.list.d/go-tmux-saver.sources > /dev/null
+		sudo apt-get update
+	fi
+	sudo apt-get -y install go-tmux-saver
+
+	# First run: create config.json + units + tmux.conf snippet, enable timers.
+	# Later runs: re-render and apply any drift (exit 1 = "drift was fixed",
+	# not an error). An existing config.json is never overwritten.
+	if [ -e ~/.config/go-tmux-saver/config.json ]; then
+		go-tmux-saver setup update || true
+	else
+		go-tmux-saver setup install
+	fi
+}
+
 # Fix permissions
 umask 022
 
@@ -590,7 +675,9 @@ clipboard_over_ssh
 ssh
 kitty_conf
 claude
+tmux_pkg
 tmux_persistence
+tmux_saver
 
 if [ $SERVER -ne 1 ]; then
 	(
