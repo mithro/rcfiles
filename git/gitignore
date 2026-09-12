@@ -5,3 +5,5 @@
 .*.swo
 *.pyc*
 out-*
+
+**/.claude/settings.local.json
