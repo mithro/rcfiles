@@ -1,9 +1,10 @@
 #!/usr/bin/python
 
-import urllib2
 import json
 import os
 import subprocess
+
+import urllib2
 
 root = os.path.dirname(__file__)
 if not root:

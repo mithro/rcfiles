@@ -5,8 +5,9 @@
 #         Tim Ansell <mithro AT mithis DOT com>
 # License: MIT
 
-import os
 import logging
+import os
+
 import ConfigParser
 
 
@@ -49,7 +50,7 @@ def _get_firefox_nt_profile_dir():
     )
     try:
         result = _winreg.QueryValueEx(key, "AppData")
-    except WindowsError:
+    except OSError:
         return None
     else:
         key.Close()

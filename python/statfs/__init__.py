@@ -7,10 +7,9 @@
 See man statfs for usage.
 """
 
-import os
-
 import ctypes
 import ctypes.util
+import os
 
 libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
 

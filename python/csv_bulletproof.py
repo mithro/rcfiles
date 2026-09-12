@@ -19,7 +19,7 @@ class EOFError(IOError):
     pass
 
 
-class CSVReader(object):
+class CSVReader:
     def __init__(self, file):
         self.f = file
         self.state = self.READING

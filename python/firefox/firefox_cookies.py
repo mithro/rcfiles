@@ -5,9 +5,10 @@
 #         Tim Ansell <mithro AT mithis DOT com>
 # License: MIT
 
+import os
+
 import cookielib
 import firefox_finder
-import os
 
 
 def sqlite2cookie(filename):

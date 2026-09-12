@@ -3,9 +3,10 @@
 # This script vacuum's all the firefox sqlite databases. This should make it
 # run much faster.
 
-import sys
-import sqlite3
 import os
+import sqlite3
+import sys
+
 import firefox_finder
 
 firefoxdir = firefox_finder.get_profile_dir_interactive()

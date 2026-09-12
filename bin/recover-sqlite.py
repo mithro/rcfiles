@@ -1,12 +1,13 @@
 import os
 import sys
+
 from progressbar import (
-    Percentage,
-    Bar,
-    RotatingMarker,
     ETA,
+    Bar,
     FileTransferSpeed,
+    Percentage,
     ProgressBar,
+    RotatingMarker,
 )
 
 f = open("/dev/mapper/sysvg-root", "rb")

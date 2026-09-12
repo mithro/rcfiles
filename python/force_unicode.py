@@ -17,7 +17,7 @@ except UnicodeEncodeError:
     pass
 
 if sys.stdout.encoding != "UTF-8" or sys.stderr.encoding != "UTF-8":
-    from ctypes import pythonapi, py_object, c_char_p
+    from ctypes import c_char_p, py_object, pythonapi
 
     PyFile_SetEncoding = pythonapi.PyFile_SetEncoding
     PyFile_SetEncoding.argtypes = (py_object, c_char_p)
