@@ -269,6 +269,7 @@ function pkgs {
 		bpython \
 		curl \
 		git \
+		gnupg \
 		htop \
 		ipython3 \
 		jq \
