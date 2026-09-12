@@ -363,12 +363,32 @@ function tmux_pkg {
 		return 0
 	fi
 
+	# Each suite is a SEPARATE flat repository (the same version ships for
+	# several Debian releases), so the suite is part of the path: the repo root
+	# itself has no Release file and apt 404s on it.
+	local suite
+	suite="$(. /etc/os-release && echo "${VERSION_CODENAME:-trixie}")"
+
 	# Prefer the welland proxy (cached); fall back to the public repo off-net.
 	local base=https://apt-proxy.welland.mithis.com/tmux
-	if ! curl -fsS --max-time 6 -o /dev/null "$base/InRelease"; then
+	if ! curl -fsSL --max-time 6 -o /dev/null "$base/$suite/InRelease"; then
 		base=https://mithro.github.io/tmux
 	fi
-	echo "Installing mithro tmux from $base ..."
+	# Only suites we actually publish (trixie, sid) have a repo; anything else
+	# (an Ubuntu server, a new Debian) keeps the distro tmux rather than
+	# wedging apt with a source that 404s.
+	if ! curl -fsSL --max-time 15 -o /dev/null "$base/$suite/InRelease"; then
+		echo "tmux_pkg: no repo for suite '$suite' at $base, keeping distro tmux" >&2
+		return 0
+	fi
+	# gpg is needed to dearmor the key. pkgs() installs gnupg, but check
+	# anyway: a pipeline's exit status is its LAST command (sudo tee), so a
+	# missing gpg writes a 0-byte keyring and sails straight past set -e.
+	if ! command -v gpg > /dev/null; then
+		echo "tmux_pkg: gpg not available to dearmor the key, keeping distro tmux" >&2
+		return 0
+	fi
+	echo "Installing mithro tmux from $base/$suite ..."
 
 	sudo mkdir -p -m 755 /etc/apt/keyrings
 	# The published key is ASCII-armored; dearmor to a binary keyring.
@@ -377,11 +397,22 @@ function tmux_pkg {
 		| sudo tee /etc/apt/keyrings/mithro-tmux.gpg > /dev/null
 	sudo chmod go+r /etc/apt/keyrings/mithro-tmux.gpg
 	# deb822 source, matching the other welland mithro repos (dtbocfg, etc.).
-	printf 'Types: deb\nURIs: %s/\nSuites: ./\nComponents:\nSigned-By: /etc/apt/keyrings/mithro-tmux.gpg\n' "$base" \
+	printf 'Types: deb\nURIs: %s/%s/\nSuites: ./\nComponents:\nSigned-By: /etc/apt/keyrings/mithro-tmux.gpg\n' "$base" "$suite" \
 		| sudo tee /etc/apt/sources.list.d/tmux.sources > /dev/null
 
-	sudo apt-get update
-	sudo apt-get -y install tmux
+	# Non-fatal from here on. A newer tmux is an upgrade, not a prerequisite:
+	# letting a repo outage abort setup.sh (set -e) would skip everything after
+	# this point, including tmux_persistence and tmux_saver -- the units that
+	# actually make tmux usable. Remove the source again so a broken repo does
+	# not wedge every later apt-get on the machine.
+	if ! sudo apt-get update; then
+		echo "tmux_pkg: apt-get update failed, keeping distro tmux" >&2
+		sudo rm -f /etc/apt/sources.list.d/tmux.sources
+		sudo apt-get update || true
+		return 0
+	fi
+	sudo apt-get -y install tmux \
+		|| echo "tmux_pkg: install failed, keeping distro tmux" >&2
 }
 
 function uv_install {
