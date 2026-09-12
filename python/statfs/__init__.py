@@ -60,7 +60,7 @@ def statfs(path):
     err = _statfs(path, ctypes.byref(buf))
     if err == -1:
         errno = ctypes.get_errno()
-        raise OSError(errno, "%s path: %r" % (os.strerror(errno), path))
+        raise OSError(errno, "{} path: {!r}".format(os.strerror(errno), path))
     return buf
 
 
@@ -170,9 +170,9 @@ def main():
     else:
         path = sys.argv[0]
 
-    print("Path %s" % path, end=" ")
+    print("Path {}".format(path), end=" ")
     details = statfs(path)
-    print("is on a %s filesystem" % f_types[details.f_type])
+    print("is on a {} filesystem".format(f_types[details.f_type]))
 
 
 if __name__ == "__main__":

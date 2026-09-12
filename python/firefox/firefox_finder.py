@@ -92,7 +92,7 @@ def get_profile_dir():
 def get_profile_dir_interactive():
     profile_dir = get_profile_dir()
 
-    path = input("Path to firefox profile file [%s]: " % profile_dir)
+    path = input("Path to firefox profile file [{}]: ".format(profile_dir))
     if path.strip():
         # Some input specified, set it
         profile_dir = os.path.realpath(os.path.expanduser(path.strip()))

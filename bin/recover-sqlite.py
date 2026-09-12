@@ -36,14 +36,14 @@ while True:
     if sector.startswith(b"SQLite format 3"):
         print()
         print("Found db at", pos, hex(pos))
-        oname = "%s.sqlite3" % pos
+        oname = "{}.sqlite3".format(pos)
         out = open(oname, "wb")
         out.write(sector)
         out.write(f.read(one_mb))
         out.close()
         print(oname)
         sys.stdout.flush()
-        os.system("sqlite3 %s .tables" % oname)
+        os.system("sqlite3 {} .tables".format(oname))
         print()
         f.seek(-one_mb, os.SEEK_CUR)
 

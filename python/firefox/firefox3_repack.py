@@ -31,6 +31,5 @@ for filename in os.listdir(firefoxdir):
     s.execute("VACUUM")
     after = os.stat(filename).st_size
     print(
-        "Before %.2fM, after %.2fM"
-        % (before * 1.0 / 1024 / 1024, after * 1.0 / 1024 / 1024)
+        "Before {:.2f}M, after {:.2f}M".format(before * 1.0 / 1024 / 1024, after * 1.0 / 1024 / 1024)
     )
