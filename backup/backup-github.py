@@ -22,6 +22,8 @@ for user in ["mithro", "timsvideo"]:
             subprocess.call(f"git clone --bare {url}", shell=True)
         else:
             subprocess.call(
-                "cd {}.git; git fetch {} +refs/heads/*:+refs/heads/*".format(repo["name"], url),
+                "cd {}.git; git fetch {} +refs/heads/*:+refs/heads/*".format(
+                    repo["name"], url
+                ),
                 shell=True,
             )

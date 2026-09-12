@@ -5,6 +5,7 @@ stdlib-only; run with:  uv run python bin/test_resurrect_post_save.py
 The file/subprocess orchestration (veto + logging) is covered by a separate
 isolated integration test, not here.
 """
+
 import importlib.util
 import os
 from importlib.machinery import SourceFileLoader
@@ -13,8 +14,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def _load():
-    loader = SourceFileLoader("resurrect_post_save",
-                              os.path.join(HERE, "resurrect-post-save"))
+    loader = SourceFileLoader(
+        "resurrect_post_save", os.path.join(HERE, "resurrect-post-save")
+    )
     spec = importlib.util.spec_from_loader("resurrect_post_save", loader)
     mod = importlib.util.module_from_spec(spec)
     loader.exec_module(mod)
@@ -87,10 +89,16 @@ def main():
     cases = [
         ("count_layout_text", test_count_layout_text),
         ("count_layout_text_empty", test_count_layout_text_empty),
-        ("count_layout_ignores_substring_types", test_count_layout_ignores_substring_types),
+        (
+            "count_layout_ignores_substring_types",
+            test_count_layout_ignores_substring_types,
+        ),
         ("is_degenerate_blocks_collapse", test_is_degenerate_blocks_collapse),
         ("is_degenerate_allows_modest_shrink", test_is_degenerate_allows_modest_shrink),
-        ("is_degenerate_allows_when_last_small", test_is_degenerate_allows_when_last_small),
+        (
+            "is_degenerate_allows_when_last_small",
+            test_is_degenerate_allows_when_last_small,
+        ),
         ("is_degenerate_allows_growth", test_is_degenerate_allows_growth),
         ("is_degenerate_no_last", test_is_degenerate_no_last),
     ]
