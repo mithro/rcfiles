@@ -79,11 +79,9 @@ class CSVReader:
                     b = self.byte()
                 except EOFError:
                     yield self.args
-                    raise StopIteration
+                    return
 
                 if self.state(b):
-                    break
-
                     break
             yield self.args
 
