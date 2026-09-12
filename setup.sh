@@ -320,9 +320,11 @@ function ack {
     curl https://beyondgrep.com/ack-2.22-single-file > ~/bin/ack && chmod 0755 ~/bin/ack
 }
 
-function gh {
-	# Install GitHub CLI (gh) from official repository
-	# Check if gh is already installed
+function gh_install {
+	# Install GitHub CLI (gh) from official repository.
+	# NB: the function is deliberately NOT named `gh`. `command -v` resolves
+	# shell functions before binaries, so a function named gh makes the guard
+	# below always match itself and the install never runs.
 	if command -v gh > /dev/null; then
 		echo "gh is already installed, skipping..."
 		return 0
@@ -720,7 +722,7 @@ tmux_plugins
 
 bash_completions
 ack
-gh
+gh_install
 uv_install
 ssh_agent
 ssh_agent_mux
