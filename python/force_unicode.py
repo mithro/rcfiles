@@ -30,7 +30,7 @@ if sys.stdout.encoding != "UTF-8" or sys.stderr.encoding != "UTF-8":
 
         if sys.stdout.encoding != "UTF-8":
             raise SystemError(
-                "Unable to force stdout to UTF-8, encoding still {}.".format(sys.stdout.encoding)
+                f"Unable to force stdout to UTF-8, encoding still {sys.stdout.encoding}."
             )
 
     if sys.stderr.encoding != "UTF-8":
@@ -41,7 +41,7 @@ if sys.stdout.encoding != "UTF-8" or sys.stderr.encoding != "UTF-8":
 
         if sys.stderr.encoding != "UTF-8":
             raise SystemError(
-                "Unable to force stderr to UTF-8, encoding still {}.".format(sys.stderr.encoding)
+                f"Unable to force stderr to UTF-8, encoding still {sys.stderr.encoding}."
             )
 
 try:
@@ -49,7 +49,7 @@ try:
     sys.stdout.write("\b")
 except UnicodeEncodeError as e:
     raise SystemError(
-        "Unable to write unicode on stdout (encoding {}).\n{}".format(sys.stdout.encoding, e)
+        f"Unable to write unicode on stdout (encoding {sys.stdout.encoding}).\n{e}"
     )
 
 try:
@@ -57,5 +57,5 @@ try:
     sys.stderr.write("\b")
 except UnicodeEncodeError as e:
     raise SystemError(
-        "Unable to write unicode on stderr (encoding {}).\n{}".format(sys.stderr.encoding, e)
+        f"Unable to write unicode on stderr (encoding {sys.stderr.encoding}).\n{e}"
     )

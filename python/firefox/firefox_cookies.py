@@ -72,7 +72,7 @@ def get_cookie_jar_interactive():
     elif os.path.join(profile_dir, "cookies.txt"):
         cookie_jar = os.path.join(profile_dir, "cookies.txt")
 
-    path = input("Path to cookie jar file [{}]: ".format(cookie_jar))
+    path = input(f"Path to cookie jar file [{cookie_jar}]: ")
     if path.strip():
         # Some input specified, set it
         cookie_jar = os.path.realpath(os.path.expanduser(path.strip()))

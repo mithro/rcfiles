@@ -38,13 +38,13 @@ with open(DEVICE, "rb") as f:
         if sector.startswith(b"SQLite format 3"):
             print()
             print("Found db at", pos, hex(pos))
-            oname = "{}.sqlite3".format(pos)
+            oname = f"{pos}.sqlite3"
             with open(oname, "wb") as out:
                 out.write(sector)
                 out.write(f.read(one_mb))
             print(oname)
             sys.stdout.flush()
-            os.system("sqlite3 {} .tables".format(oname))
+            os.system(f"sqlite3 {oname} .tables")
             print()
             f.seek(-one_mb, os.SEEK_CUR)
 
