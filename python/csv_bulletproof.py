@@ -19,7 +19,7 @@ class EOFError(IOError):
     pass
 
 
-class CSVReader(object):
+class CSVReader:
     def __init__(self, file):
         self.f = file
         self.state = self.READING
@@ -79,11 +79,9 @@ class CSVReader(object):
                     b = self.byte()
                 except EOFError:
                     yield self.args
-                    raise StopIteration
+                    return
 
                 if self.state(b):
-                    break
-
                     break
             yield self.args
 

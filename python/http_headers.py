@@ -26,7 +26,7 @@ class HTTPHeaders(dict):
             key, value = header.split(": ", 1)
             if ";" in value:
                 parts = value.strip().split("; ")
-                for i in range(0, len(parts)):
+                for i in range(len(parts)):
                     if "=" in parts[i]:
                         parts[i] = parts[i].split("=")
                 value = parts

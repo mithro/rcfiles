@@ -3,9 +3,10 @@
 # This script vacuum's all the firefox sqlite databases. This should make it
 # run much faster.
 
-import sys
-import sqlite3
 import os
+import sqlite3
+import sys
+
 import firefox_finder
 
 firefoxdir = firefox_finder.get_profile_dir_interactive()
@@ -30,6 +31,5 @@ for filename in os.listdir(firefoxdir):
     s.execute("VACUUM")
     after = os.stat(filename).st_size
     print(
-        "Before %.2fM, after %.2fM"
-        % (before * 1.0 / 1024 / 1024, after * 1.0 / 1024 / 1024)
+        f"Before {before * 1.0 / 1024 / 1024:.2f}M, after {after * 1.0 / 1024 / 1024:.2f}M"
     )

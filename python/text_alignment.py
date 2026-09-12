@@ -82,6 +82,6 @@ def lines(input):
             w = input.read(1)
             if len(w) == 0:
                 yield b[1:-1]
-                raise StopIteration
+                return
             b += w
         yield b[1:-1]

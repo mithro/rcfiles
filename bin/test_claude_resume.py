@@ -9,6 +9,7 @@ announce_decision() is the unit under test because the script's resume path
 ends in os.execvp() (replaces the process); the decision + the line it prints
 are factored out so they can be checked without a real stdin or exec.
 """
+
 import importlib.util
 import io
 import os
@@ -116,8 +117,13 @@ def run_main(decision, sid):
     stdin/stdout are swapped for StringIO so the un-wired main() can't block on
     input() and render() can't scribble on the test's terminal."""
     calls = []
-    saved = (cr.announce_decision, cr.os.execvp, cr.sys.argv,
-             cr.sys.stdout, cr.sys.stdin)
+    saved = (
+        cr.announce_decision,
+        cr.os.execvp,
+        cr.sys.argv,
+        cr.sys.stdout,
+        cr.sys.stdin,
+    )
     try:
         cr.announce_decision = lambda *a, **k: decision
 
@@ -134,8 +140,13 @@ def run_main(decision, sid):
         except (_Exec, SystemExit):
             pass
     finally:
-        (cr.announce_decision, cr.os.execvp, cr.sys.argv,
-         cr.sys.stdout, cr.sys.stdin) = saved
+        (
+            cr.announce_decision,
+            cr.os.execvp,
+            cr.sys.argv,
+            cr.sys.stdout,
+            cr.sys.stdin,
+        ) = saved
     return calls[0] if calls else None
 
 
@@ -150,7 +161,10 @@ def test_main_resume_execs_claude_resume():
 
 def main():
     cases = [
-        ("enter_resumes_and_announces_session", test_enter_resumes_and_announces_session),
+        (
+            "enter_resumes_and_announces_session",
+            test_enter_resumes_and_announces_session,
+        ),
         ("ctrl_c_skips_and_announces", test_ctrl_c_skips_and_announces),
         ("ctrl_d_skips_and_announces", test_ctrl_d_skips_and_announces),
         ("non_tty_resumes_without_reading", test_non_tty_resumes_without_reading),

@@ -5,9 +5,12 @@
 #         Tim Ansell <mithro AT mithis DOT com>
 # License: MIT
 
-import os
 import logging
+import os
+
 import ConfigParser
+
+logger = logging.getLogger(__name__)
 
 
 # Set up cookie jar paths
@@ -18,14 +21,16 @@ def _get_firefox_profile_dir(path):
 
     # Open profiles.ini and read the path for the first profile
     profiles_ini_reader = ConfigParser.ConfigParser()
-    profiles_ini_reader.readfp(open(profiles_ini))
+    with open(profiles_ini) as profiles_ini_file:
+        profiles_ini_reader.readfp(profiles_ini_file)
     default_profile = "Profile0"
     for section in profiles_ini_reader.sections():
-        if section.startswith("Profile"):
-            if profiles_ini_reader.has_option(
-                section, "Default"
-            ) and profiles_ini_reader.getboolean(section, "Default"):
-                default_profile = section
+        if (
+            section.startswith("Profile")
+            and profiles_ini_reader.has_option(section, "Default")
+            and profiles_ini_reader.getboolean(section, "Default")
+        ):
+            default_profile = section
 
     profile_name = profiles_ini_reader.get(default_profile, "Path", True)
 
@@ -42,14 +47,14 @@ def _get_firefox_nt_profile_dir():
         import _winreg
         import win32api
     except ImportError:
-        logging.error("Cannot load winreg -- running windows and win32api loaded?")
+        logger.error("Cannot load winreg -- running windows and win32api loaded?")
     key = _winreg.OpenKey(
         _winreg.HKEY_CURRENT_USER,
         r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
     )
     try:
         result = _winreg.QueryValueEx(key, "AppData")
-    except WindowsError:
+    except OSError:
         return None
     else:
         key.Close()
@@ -91,7 +96,7 @@ def get_profile_dir():
 def get_profile_dir_interactive():
     profile_dir = get_profile_dir()
 
-    path = input("Path to firefox profile file [%s]: " % profile_dir)
+    path = input(f"Path to firefox profile file [{profile_dir}]: ")
     if path.strip():
         # Some input specified, set it
         profile_dir = os.path.realpath(os.path.expanduser(path.strip()))

@@ -60,6 +60,9 @@ SERVER=1
 HOST_INC="$RCFILES/config/$SHORT_HOSTNAME.inc"
 if [ -f "$HOST_INC" ]; then
 	echo "Loading per-host config: $HOST_INC"
+	# The include is chosen by hostname at runtime, so there is no single file
+	# for ShellCheck to follow. /dev/null tells it to stop trying (SC1090).
+	# shellcheck source=/dev/null
 	source "$HOST_INC"
 fi
 

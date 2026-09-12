@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 #
 # Copyright 2011 Google Inc. All Rights Reserved.
 
@@ -7,10 +6,9 @@
 See man statfs for usage.
 """
 
-import os
-
 import ctypes
 import ctypes.util
+import os
 
 libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
 
@@ -62,7 +60,7 @@ def statfs(path):
     err = _statfs(path, ctypes.byref(buf))
     if err == -1:
         errno = ctypes.get_errno()
-        raise OSError(errno, "%s path: %r" % (os.strerror(errno), path))
+        raise OSError(errno, f"{os.strerror(errno)} path: {path!r}")
     return buf
 
 
@@ -172,9 +170,9 @@ def main():
     else:
         path = sys.argv[0]
 
-    print("Path %s" % path, end=" ")
+    print(f"Path {path}", end=" ")
     details = statfs(path)
-    print("is on a %s filesystem" % f_types[details.f_type])
+    print(f"is on a {f_types[details.f_type]} filesystem")
 
 
 if __name__ == "__main__":
