@@ -1,0 +1,20 @@
+[Unit]
+Description=Back up Claude Code session storage to big-storage
+Documentation=file:%h/rcfiles/bin/claude-sessions-backup.py
+# Hourly mirror (never deleting) of ~/.claude/projects, history.jsonl, todos and
+# the episodic-memory conversation archive to
+# big-storage:/backups/machines/<machine>/claude-sessions/. Exists because Claude
+# Code's cleanupPeriodDays sweep silently deleted months of transcripts on
+# 2026-09-12; the backup is the copy the sweep cannot reach.
+# Identical on every host; the script picks the machine name and, on
+# big-storage itself, copies locally instead of over ssh.
+
+[Service]
+Type=oneshot
+ExecStart=%h/bin/claude-sessions-backup.py
+# Uses its own key (~/.ssh/keys/claude-sessions-backup), so no agent needed.
+Environment=SSH_AUTH_SOCK=
+Nice=10
+IOSchedulingClass=idle
+# A laptop off the network just fails this run; the timer retries next hour.
+TimeoutStartSec=1h

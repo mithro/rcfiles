@@ -725,6 +725,29 @@ function tmux_saver {
 	fi
 }
 
+function claude_sessions_backup {
+	# All hosts. Hourly, never-deleting mirror of Claude Code session storage
+	# (~/.claude/projects, history.jsonl, todos, episodic-memory archive) to
+	# big-storage:/backups/machines/<machine>/claude-sessions/. Exists because
+	# Claude Code's cleanupPeriodDays sweep deleted months of transcripts on
+	# 2026-09-12 (see bin/claude-sessions-backup.py for the design).
+	#
+	# Two host-specific pieces are NOT done here and must be set up once by
+	# hand on a new machine (they involve key material):
+	#   1. ssh-keygen -t ed25519 -N "" -f ~/.ssh/keys/claude-sessions-backup
+	#   2. on big-storage, append to ~/.ssh/authorized_keys:
+	#      restrict,command="/usr/bin/rrsync /backups/machines/<machine>/claude-sessions" <pubkey>
+	#      and mkdir -m700 that claude-sessions directory.
+	# big-storage itself copies locally and needs neither.
+	mkdir -p ~/.config/systemd/user
+	ln -sf "$RCFILES/systemd/user/claude-sessions-backup.service" \
+		~/.config/systemd/user/claude-sessions-backup.service
+	ln -sf "$RCFILES/systemd/user/claude-sessions-backup.timer" \
+		~/.config/systemd/user/claude-sessions-backup.timer
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user daemon-reload || true
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable --now claude-sessions-backup.timer || true
+}
+
 # Fix permissions
 umask 022
 
@@ -760,6 +783,7 @@ claude_teleport
 tmux_pkg
 tmux_persistence
 tmux_saver
+claude_sessions_backup
 
 if [ $SERVER -ne 1 ]; then
 	(
