@@ -377,7 +377,7 @@ function tmux_pkg {
 	# Prefer the welland proxy (cached); fall back to the public repo off-net.
 	local base=https://apt-proxy.welland.mithis.com/tmux
 	if ! curl -fsSL --max-time 6 -o /dev/null "$base/$suite/InRelease"; then
-		base=https://mithro.github.io/tmux
+		base=https://mith.ro/tmux
 	fi
 	# Only suites we actually publish (trixie, sid) have a repo; anything else
 	# (an Ubuntu server, a new Debian) keeps the distro tmux rather than
@@ -588,10 +588,10 @@ function claude_teleport {
 	# of a single static binary; that binary is suite-independent, so the
 	# trixie suite is used on every machine (Debian and Ubuntu alike).
 	sudo install -d -m0755 /etc/apt/keyrings
-	curl -fsSL https://mithro.github.io/go-claude-teleport/go-claude-teleport.gpg \
+	curl -fsSL https://mith.ro/go-claude-teleport/go-claude-teleport.gpg \
 		| sudo tee /etc/apt/keyrings/go-claude-teleport.gpg > /dev/null
 	sudo chmod go+r /etc/apt/keyrings/go-claude-teleport.gpg
-	echo "deb [signed-by=/etc/apt/keyrings/go-claude-teleport.gpg] https://mithro.github.io/go-claude-teleport/trixie/ ./" \
+	echo "deb [signed-by=/etc/apt/keyrings/go-claude-teleport.gpg] https://mith.ro/go-claude-teleport/trixie/ ./" \
 		| sudo tee /etc/apt/sources.list.d/go-claude-teleport.list > /dev/null
 
 	# Update and install (apt-get install upgrades to the newest published).
