@@ -386,24 +386,22 @@ function tmux_pkg {
 		echo "tmux_pkg: no repo for suite '$suite' at $base, keeping distro tmux" >&2
 		return 0
 	fi
-	# gpg is needed to dearmor the key. pkgs() installs gnupg, but check
-	# anyway: a pipeline's exit status is its LAST command (sudo tee), so a
-	# missing gpg writes a 0-byte keyring and sails straight past set -e.
-	if ! command -v gpg > /dev/null; then
-		echo "tmux_pkg: gpg not available to dearmor the key, keeping distro tmux" >&2
-		return 0
-	fi
 	echo "Installing mithro tmux from $base/$suite ..."
 
 	sudo mkdir -p -m 755 /etc/apt/keyrings
-	# The published key is ASCII-armored; dearmor to a binary keyring.
-	curl -fsSL "$base/tmux.gpg" \
-		| gpg --dearmor \
-		| sudo tee /etc/apt/keyrings/mithro-tmux.gpg > /dev/null
-	sudo chmod go+r /etc/apt/keyrings/mithro-tmux.gpg
+	# tmux.gpg is a binary keyring, installed under the repository's name
+	# (docs/conventions.md in mithro/apt-repo-action). curl -f fails on an
+	# error instead of writing a page as the key.
+	local key
+	key="$(mktemp)"
+	curl -fsSL -o "$key" "$base/tmux.gpg"
+	sudo install -m 0644 "$key" /etc/apt/keyrings/tmux.gpg
+	rm -f "$key"
 	# deb822 source, matching the other welland mithro repos (dtbocfg, etc.).
-	printf 'Types: deb\nURIs: %s/%s/\nSuites: ./\nComponents:\nSigned-By: /etc/apt/keyrings/mithro-tmux.gpg\n' "$base" "$suite" \
+	printf 'Types: deb\nURIs: %s/%s/\nSuites: ./\nComponents:\nSigned-By: /etc/apt/keyrings/tmux.gpg\n' "$base" "$suite" \
 		| sudo tee /etc/apt/sources.list.d/tmux.sources > /dev/null
+	# The keyring's name before the convention; nothing points at it now.
+	sudo rm -f /etc/apt/keyrings/mithro-tmux.gpg
 
 	# Non-fatal from here on. A newer tmux is an upgrade, not a prerequisite:
 	# letting a repo outage abort setup.sh (set -e) would skip everything after
@@ -690,19 +688,19 @@ function tmux_saver {
 			echo "tmux_saver: repo unreachable at $base/$suite, skipping install" >&2
 			return 0
 		fi
-		if ! command -v gpg > /dev/null; then
-			echo "tmux_saver: gpg not available to dearmor the key, skipping" >&2
-			return 0
-		fi
 		echo "Adding go-tmux-saver apt repo from $base/$suite ..."
 		sudo mkdir -p -m 755 /etc/apt/keyrings
-		# The published key is ASCII-armored; dearmor to a binary keyring.
-		curl -fsSL "$base/go-tmux-saver.gpg" \
-			| gpg --dearmor \
-			| sudo tee /etc/apt/keyrings/mithro-go-tmux-saver.gpg > /dev/null
-		sudo chmod go+r /etc/apt/keyrings/mithro-go-tmux-saver.gpg
-		printf 'Types: deb\nURIs: %s/%s/\nSuites: ./\nSigned-By: /etc/apt/keyrings/mithro-go-tmux-saver.gpg\n' "$base" "$suite" \
+		# go-tmux-saver.gpg is a binary keyring, installed under the
+		# repository's name (docs/conventions.md in mithro/apt-repo-action).
+		local key
+		key="$(mktemp)"
+		curl -fsSL -o "$key" "$base/go-tmux-saver.gpg"
+		sudo install -m 0644 "$key" /etc/apt/keyrings/go-tmux-saver.gpg
+		rm -f "$key"
+		printf 'Types: deb\nURIs: %s/%s/\nSuites: ./\nSigned-By: /etc/apt/keyrings/go-tmux-saver.gpg\n' "$base" "$suite" \
 			| sudo tee /etc/apt/sources.list.d/go-tmux-saver.sources > /dev/null
+		# The keyring's name before the convention; nothing points at it now.
+		sudo rm -f /etc/apt/keyrings/mithro-go-tmux-saver.gpg
 		# Non-fatal: remove the source again rather than leave a broken one
 		# wedging every later apt-get on the machine.
 		if ! sudo apt-get update; then
