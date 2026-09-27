@@ -1,0 +1,19 @@
+# Shared Playwright MCP server -- socket-activated front door.
+#
+# Replaces the claude-plugins-official "playwright" plugin, which started one
+# `npx @playwright/mcp@latest` per Claude session (13 idle copies seen
+# 2026-09-27). setup.sh playwright_mcp() registers it with Claude Code (user
+# scope) as http://127.0.0.1:8931/mcp. The first connection starts
+# playwright-mcp-proxy.service, which pulls in playwright-mcp.service (the real,
+# sandboxed server on 127.0.0.1:8932). When the proxy idles out it exits and
+# StopWhenUnneeded= stops the server too. Same pattern as ngsw-mcp.socket.
+[Unit]
+Description=Shared Playwright MCP server (socket-activated, 127.0.0.1:8931)
+
+[Socket]
+ListenStream=127.0.0.1:8931
+NoDelay=true
+Service=playwright-mcp-proxy.service
+
+[Install]
+WantedBy=sockets.target
