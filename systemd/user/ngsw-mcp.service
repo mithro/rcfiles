@@ -1,0 +1,27 @@
+# The shared netgear switch MCP server (python3-netgear-switch-library's
+# ngsw-mcp, streamable-http). Started on demand by ngsw-mcp-proxy.service and
+# stopped again when that proxy idles out (StopWhenUnneeded=).
+#
+# Runs as tim: credentials are resolved lazily by ~/.config/ngsw/get-cred.sh
+# (passwordless sudo -> gdoc2netcfg), nothing secret on disk. Writes are
+# enabled (NGSW_MCP_ALLOW_WRITES=1) -- every disruptive tool still needs
+# force=true per call and honours protected_ports in the inventory.
+[Unit]
+Description=netgear switch MCP server (ngsw-mcp, streamable-http on 127.0.0.1:8766)
+StopWhenUnneeded=yes
+
+[Service]
+Environment=NGSW_MCP_TRANSPORT=streamable-http
+Environment=NGSW_MCP_HOST=127.0.0.1
+Environment=NGSW_MCP_PORT=8766
+Environment=NGSW_INVENTORY=%h/.config/ngsw/inventory.toml
+Environment=NGSW_MCP_ALLOW_WRITES=1
+ExecStart=/usr/bin/ngsw-mcp
+# Block start-up completion until the port accepts, so After=ngsw-mcp.service
+# in the proxy unit means "listening", not merely "exec'd".
+ExecStartPost=/usr/bin/python3 %h/.config/ngsw/wait-listen.py 127.0.0.1 8766 20
+# No Restart=: this is an on-demand unit. uvicorn exits 143 on the SIGTERM that
+# StopWhenUnneeded sends, which on-failure would treat as a crash and restart
+# into a stop/start loop (seen 2026-08-22). The next client connection re-pulls
+# it through ngsw-mcp-proxy.service anyway.
+Restart=no
