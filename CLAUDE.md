@@ -111,6 +111,11 @@ The `linkit()` function in `setup.sh` implements a hostname-aware configuration 
 - Traps: `--allowed-hosts` must name the front-door port (`:8931`, the proxy passes the Host header through), and `XDG_CACHE_HOME` must point into the writable cache (Playwright writes `ms-playwright/b` there, not under `PLAYWRIGHT_BROWSERS_PATH`)
 - `bin/wait-listen.py` is the shared `ExecStartPost=` helper that holds the unit in "starting" until its port accepts connections
 
+**Netgear switch MCP server (`ngsw_mcp()`):**
+- Runs only on hosts with `/usr/bin/ngsw-mcp` (python3-netgear-switch-library; in practice ten64). Uses the same socket → proxy → server pattern: `ngsw-mcp.socket` on `127.0.0.1:8765`, the server on `:8766`, used by dot-claude's `netgear-switch` plugin
+- The site config (`~/.config/ngsw/inventory.toml`, `get-cred.sh`) is deliberately **not** in this public repo
+- Not sandboxed like Playwright: `get-cred.sh` resolves switch passwords through `sudo` (gdoc2netcfg), which `NoNewPrivileges=` would break
+
 ## Git Submodules
 
 The repository heavily uses git submodules for vim plugins and other tools. All submodules are defined in `.gitmodules`. After cloning, always run:

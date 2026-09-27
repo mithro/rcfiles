@@ -649,6 +649,25 @@ function playwright_mcp {
 	claude plugin disable playwright@claude-plugins-official || true
 }
 
+function ngsw_mcp {
+	# Hosts with python3-netgear-switch-library (ten64). Shared, socket-activated
+	# netgear switch MCP server on 127.0.0.1:8765 (systemd/user/ngsw-mcp.*),
+	# used by dot-claude's netgear-switch plugin. Needs ~/.config/ngsw/
+	# inventory.toml + get-cred.sh, which hold site config and are not in this
+	# (public) repo.
+	if [ ! -x /usr/bin/ngsw-mcp ]; then
+		echo "ngsw_mcp: ngsw-mcp not installed, skipping" >&2
+		return 0
+	fi
+	mkdir -p ~/.config/systemd/user
+	local unit
+	for unit in ngsw-mcp.socket ngsw-mcp-proxy.service ngsw-mcp.service; do
+		ln -sf "$RCFILES/systemd/user/$unit" ~/.config/systemd/user/$unit
+	done
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user daemon-reload || true
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable --now ngsw-mcp.socket || true
+}
+
 function tmux_persistence {
 	# All hosts. Run the tmux server (and the ssh-agent it fronts) as lingering
 	# systemd --user units so they survive any login/logout, SSH disconnect, or
@@ -831,6 +850,7 @@ kitty_conf
 claude
 claude_teleport
 playwright_mcp
+ngsw_mcp
 tmux_pkg
 tmux_persistence
 tmux_saver
