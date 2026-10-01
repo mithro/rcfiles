@@ -605,7 +605,7 @@ function playwright_mcp {
 	# Hosts with Claude Code. ONE shared, sandboxed Playwright MCP server per
 	# host (systemd/user/playwright-mcp.*) instead of the official plugin's
 	# per-session `npx @playwright/mcp@latest` (13 idle copies seen on ten64,
-	# 2026-09-27). Socket-activated on 127.0.0.1:8931; see the unit comments.
+	# 2026-09-27). Socket-activated on 127.0.0.1:26271; see the unit comments.
 	if ! command -v claude > /dev/null || ! command -v npm > /dev/null; then
 		echo "playwright_mcp: claude or npm not installed, skipping" >&2
 		return 0
@@ -613,11 +613,6 @@ function playwright_mcp {
 
 	local prefix=~/.local/share/playwright-mcp
 	local cache=~/.cache/playwright-mcp
-	local pkg="$prefix/node_modules/@playwright/mcp/package.json"
-	local before=""
-	if [ -f "$pkg" ]; then
-		before=$(node -p "require('$pkg').version")
-	fi
 
 	# Pinned server + the Chromium build that exact Playwright expects, in a
 	# private browser dir (the unit's sandbox can only write under $cache).
@@ -627,45 +622,106 @@ function playwright_mcp {
 	# ReadWritePaths= fails the unit if a (non-optional) path is missing.
 	mkdir -p "$cache/output" "$cache/browsers" "$cache/xdg-cache" "$cache/xdg-config"
 
-	mkdir -p ~/.config/systemd/user
-	local unit
-	for unit in playwright-mcp.socket playwright-mcp-proxy.service playwright-mcp.service; do
-		ln -sf "$RCFILES/systemd/user/$unit" ~/.config/systemd/user/$unit
-	done
-	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user daemon-reload || true
-	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable --now playwright-mcp.socket || true
-	# A running server keeps the old version until it idles out; only bounce it
-	# when the version actually changed (this ends open browser sessions).
-	if [ -n "$before" ] && [ "$before" != "$PLAYWRIGHT_MCP_VERSION" ]; then
-		XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user stop \
-			playwright-mcp-proxy.service playwright-mcp.service || true
-	fi
+	# The version is part of the fingerprint: a running server keeps the old
+	# version until it is bounced (which ends its open browser sessions).
+	mcp_socket_units playwright-mcp "$PLAYWRIGHT_MCP_VERSION"
 
 	# Point Claude Code at the shared server, and turn off the per-session
 	# plugin it replaces (harmless if that plugin was never installed).
-	if ! claude mcp get playwright > /dev/null; then
-		claude mcp add --scope user --transport http playwright http://127.0.0.1:8931/mcp
-	fi
+	claude_mcp_http playwright http://127.0.0.1:26271/mcp
 	claude plugin disable playwright@claude-plugins-official || true
+}
+
+function playwright_stealth_mcp {
+	# Hosts with google-chrome AND a remote display to show it on (Chrome
+	# Remote Desktop :20 and/or TigerVNC :99) -- in practice desktop. A shared
+	# HEADED Playwright MCP server driving the real google-chrome, replacing a
+	# per-session stdio `playwright-stealth` server. Socket-activated on
+	# 127.0.0.1:26272; see systemd/user/playwright-stealth-mcp.service.
+	# Reuses playwright_mcp()'s pinned install, so must run after it.
+	if [ ! -x /usr/bin/google-chrome ] ||
+		{ [ ! -x /opt/google/chrome-remote-desktop/chrome-remote-desktop ] &&
+			! command -v Xtigervnc > /dev/null; }; then
+		echo "playwright_stealth_mcp: no google-chrome + CRD/TigerVNC, skipping" >&2
+		return 0
+	fi
+	if [ ! -x ~/.local/share/playwright-mcp/node_modules/.bin/playwright-mcp ] ||
+		! command -v claude > /dev/null; then
+		echo "playwright_stealth_mcp: playwright_mcp not installed, skipping" >&2
+		return 0
+	fi
+
+	local cache=~/.cache/playwright-stealth-mcp
+	local state=~/.config/playwright-mcp/stealth-storage-state.json
+	# ReadWritePaths= fails the unit if a (non-optional) path is missing.
+	mkdir -p "$cache/output" "$cache/xdg-cache" "$cache/xdg-config" ~/.config/playwright-mcp
+	# --storage-state must exist. Start empty; it holds live cookies once
+	# filled by ~/bin/playwright-mcp-export-storage-state.js, so keep it 0600.
+	if [ ! -f "$state" ]; then
+		(umask 077 && echo '{"cookies": [], "origins": []}' > "$state")
+	fi
+
+	mcp_socket_units playwright-stealth-mcp "$PLAYWRIGHT_MCP_VERSION"
+	claude_mcp_http playwright-stealth http://127.0.0.1:26272/mcp
 }
 
 function ngsw_mcp {
 	# Hosts with python3-netgear-switch-library (ten64). Shared, socket-activated
-	# netgear switch MCP server on 127.0.0.1:8765 (systemd/user/ngsw-mcp.*),
-	# used by dot-claude's netgear-switch plugin. Needs ~/.config/ngsw/
-	# inventory.toml + get-cred.sh, which hold site config and are not in this
-	# (public) repo.
+	# netgear switch MCP server on 127.0.0.1:26273 (systemd/user/ngsw-mcp.*),
+	# used by dot-claude's netgear-switch plugin (which carries the URL). Needs
+	# ~/.config/ngsw/inventory.toml + get-cred.sh, which hold site config and
+	# are not in this (public) repo.
 	if [ ! -x /usr/bin/ngsw-mcp ]; then
 		echo "ngsw_mcp: ngsw-mcp not installed, skipping" >&2
 		return 0
 	fi
-	mkdir -p ~/.config/systemd/user
-	local unit
-	for unit in ngsw-mcp.socket ngsw-mcp-proxy.service ngsw-mcp.service; do
-		ln -sf "$RCFILES/systemd/user/$unit" ~/.config/systemd/user/$unit
+	mcp_socket_units ngsw-mcp
+}
+
+function mcp_socket_units {
+	# mcp_socket_units NAME [EXTRA]: install one socket-activated MCP stack --
+	# NAME.socket -> NAME-proxy.service -> NAME.service -- and enable the
+	# socket. When the units (or EXTRA, e.g. a pinned server version) differ
+	# from the last install, restart the socket and stop the proxy + server so
+	# everything comes back on the new config: a running .socket keeps its old
+	# ListenStream=, and a running server its old ExecStart=, until bounced
+	# (seen moving the ports, 2026-10-01). Clients just reconnect.
+	local name=$1 extra=${2:-}
+	local units=("$name.socket" "$name-proxy.service" "$name.service")
+	local stamp=~/.local/state/rcfiles/$name.fingerprint
+	local unit fingerprint
+	mkdir -p ~/.config/systemd/user ~/.local/state/rcfiles
+	for unit in "${units[@]}"; do
+		ln -sf "$RCFILES/systemd/user/$unit" ~/.config/systemd/user/"$unit"
 	done
+	fingerprint=$(cd "$RCFILES/systemd/user" && { cat "${units[@]}" && echo "$extra"; } | sha256sum)
 	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user daemon-reload || true
-	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable --now ngsw-mcp.socket || true
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable --now "$name.socket" || true
+	if [ ! -f "$stamp" ] || [ "$(cat "$stamp")" != "$fingerprint" ]; then
+		XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user stop \
+			"$name-proxy.service" "$name.service" || true
+		XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user reset-failed "$name.socket" || true
+		XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user restart "$name.socket" || true
+	fi
+	echo "$fingerprint" > "$stamp"
+}
+
+function claude_mcp_http {
+	# claude_mcp_http NAME URL: register a user-scope HTTP MCP server with
+	# Claude Code, or re-point an existing NAME (of any transport) at URL. A
+	# bare `claude mcp get || add` would leave old URLs behind forever.
+	local name=$1 url=$2 have="" current=""
+	if [ -f ~/.claude.json ]; then
+		have=$(jq -r --arg n "$name" 'if .mcpServers[$n] then "yes" else "" end' ~/.claude.json)
+		current=$(jq -r --arg n "$name" '.mcpServers[$n].url // ""' ~/.claude.json)
+	fi
+	if [ "$current" = "$url" ]; then
+		return 0
+	fi
+	if [ -n "$have" ]; then
+		claude mcp remove --scope user "$name"
+	fi
+	claude mcp add --scope user --transport http "$name" "$url"
 }
 
 function tmux_persistence {
@@ -850,6 +906,7 @@ kitty_conf
 claude
 claude_teleport
 playwright_mcp
+playwright_stealth_mcp
 ngsw_mcp
 tmux_pkg
 tmux_persistence

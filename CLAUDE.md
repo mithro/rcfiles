@@ -104,15 +104,23 @@ The `linkit()` function in `setup.sh` implements a hostname-aware configuration 
 
 **Shared Playwright MCP server (`playwright_mcp()`):**
 - One sandboxed Playwright MCP server per host instead of the official plugin's per-session `npx @playwright/mcp@latest` (which left 13 idle copies on ten64)
-- `systemd/user/playwright-mcp.socket` listens on `127.0.0.1:8931`; the first connection starts `playwright-mcp-proxy.service` (systemd-socket-proxyd), which pulls in `playwright-mcp.service` on `:8932`; both stop after 30 min idle (`StopWhenUnneeded=`)
+- `systemd/user/playwright-mcp.socket` listens on `127.0.0.1:26271`; the first connection starts `playwright-mcp-proxy.service` (systemd-socket-proxyd), which pulls in `playwright-mcp.service` on `:26371`; both stop after 30 min idle (`StopWhenUnneeded=`)
 - Pinned version (`PLAYWRIGHT_MCP_VERSION` in `setup.sh`) installed with npm into `~/.local/share/playwright-mcp`, with its own Chromium in `~/.cache/playwright-mcp/browsers`; bumping the version restarts a running server
 - The server is sandboxed: cgroup limits (MemoryMax 2G, CPUQuota 200%, TasksMax 1024), a read-only system and home with only `~/.cache/playwright-mcp`, `~/local` and `~/github` writable, and NoNewPrivileges
 - `setup.sh` registers it as user-scope HTTP server `playwright` (`claude mcp add`) and disables `playwright@claude-plugins-official`
-- Traps: `--allowed-hosts` must name the front-door port (`:8931`, the proxy passes the Host header through), and `XDG_CACHE_HOME` must point into the writable cache (Playwright writes `ms-playwright/b` there, not under `PLAYWRIGHT_BROWSERS_PATH`)
+- Traps: `--allowed-hosts` must name the front-door port (`:26271`, the proxy passes the Host header through), and `XDG_CACHE_HOME` must point into the writable cache (Playwright writes `ms-playwright/b` there, not under `PLAYWRIGHT_BROWSERS_PATH`)
 - `bin/wait-listen.py` is the shared `ExecStartPost=` helper that holds the unit in "starting" until its port accepts connections
+- Port plan, identical on every host: front doors `2627x` (M-C-P on a phone keypad), backends front + 100 — playwright 26271/26371, playwright-stealth 26272/26372, netgear 26273/26373 (below the Linux ephemeral range and clear of 8xxx dev servers)
+- `mcp_socket_units NAME [EXTRA]` installs any socket → proxy → server stack and, when the unit text (or EXTRA, the pinned version) changed since the last run (`~/.local/state/rcfiles/NAME.fingerprint`), restarts the socket and stops the proxy + server — a running socket/server otherwise keeps its OLD ports. `claude_mcp_http NAME URL` registers or re-points a user-scope HTTP MCP server
+- Not truly on-demand: every open Claude session holds a standalone MCP GET (SSE) stream, so `--exit-idle-time` only fires once no session is open at all
+
+**Shared headed ("stealth") Playwright MCP server (`playwright_stealth_mcp()`):**
+- Only on hosts with `/usr/bin/google-chrome` plus Chrome Remote Desktop and/or TigerVNC (desktop). Same pattern on `127.0.0.1:26272` → `:26372`, same pinned install, drives the real headed google-chrome, `--isolated` (one Chrome, one context per session)
+- `bin/playwright-mcp-pick-display.py` (the `ExecStart=` wrapper) picks CRD display `:20` unless another Claude session already has something on `:20`, else TigerVNC `:99`; a human connected over CRD is deliberately not a reason to fall back
+- Contexts are seeded from `~/.config/playwright-mcp/stealth-storage-state.json` (created empty, 0600, never committed); `bin/playwright-mcp-export-storage-state.js` fills it from on-disk Chrome profiles
 
 **Netgear switch MCP server (`ngsw_mcp()`):**
-- Runs only on hosts with `/usr/bin/ngsw-mcp` (python3-netgear-switch-library; in practice ten64). Uses the same socket → proxy → server pattern: `ngsw-mcp.socket` on `127.0.0.1:8765`, the server on `:8766`, used by dot-claude's `netgear-switch` plugin
+- Runs only on hosts with `/usr/bin/ngsw-mcp` (python3-netgear-switch-library; in practice ten64). Uses the same socket → proxy → server pattern: `ngsw-mcp.socket` on `127.0.0.1:26273`, the server on `:26373`, used by dot-claude's `netgear-switch` plugin
 - The site config (`~/.config/ngsw/inventory.toml`, `get-cred.sh`) is deliberately **not** in this public repo
 - Not sandboxed like Playwright: `get-cred.sh` resolves switch passwords through `sudo` (gdoc2netcfg), which `NoNewPrivileges=` would break
 
