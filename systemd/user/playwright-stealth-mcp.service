@@ -30,7 +30,14 @@ Environment=XAUTHORITY=%h/.Xauthority
 # Chrome's own cache/config (crashpad DB etc.) inside the writable area.
 Environment=XDG_CACHE_HOME=%h/.cache/playwright-stealth-mcp/xdg-cache
 Environment=XDG_CONFIG_HOME=%h/.cache/playwright-stealth-mcp/xdg-config
+# The display decision needs other processes' /proc/PID/fd, which this unit's
+# sandbox (its own user namespace) cannot read -- so it is made by an
+# UNSANDBOXED ('+') pre-step and handed over in the runtime directory.
+RuntimeDirectory=playwright-stealth-mcp
+ExecStartPre=+/usr/bin/python3 %h/bin/playwright-mcp-pick-display.py \
+    --write %t/playwright-stealth-mcp/display
 ExecStart=/usr/bin/python3 %h/bin/playwright-mcp-pick-display.py \
+    --exec %t/playwright-stealth-mcp/display \
     %h/.local/share/playwright-mcp/node_modules/.bin/playwright-mcp \
     --browser chrome --executable-path /usr/bin/google-chrome \
     --isolated \
