@@ -1,0 +1,78 @@
+# Shared HEADED Playwright MCP server (@playwright/mcp driving the real
+# /usr/bin/google-chrome, streamable-http on 127.0.0.1:26372), serving every
+# Claude session on this host. Started on demand by
+# playwright-stealth-mcp-proxy.service; stopped when that proxy idles out.
+#
+# Installed (symlinked) by setup.sh playwright_stealth_mcp() on hosts with
+# google-chrome and a remote display (Chrome Remote Desktop and/or TigerVNC).
+# Same pinned install as playwright-mcp.service (~/.local/share/playwright-mcp).
+#
+# Display: ~/bin/playwright-mcp-pick-display.py chooses at each start -- the
+# Chrome Remote Desktop display :20 (so a human on CRD can watch / help
+# debug), unless ANOTHER Claude session already has something on :20, then
+# TigerVNC :99. See that script.
+#
+# Profile: --isolated, so there is ONE Chrome and each HTTP client (Claude
+# session) gets its own in-memory context; nothing a session does is saved.
+# Every context is seeded from --storage-state (cookies + localStorage).
+# setup.sh creates it empty; fill it from old on-disk profiles with
+# ~/bin/playwright-mcp-export-storage-state.js. Logins made later are NOT
+# persisted -- re-export to keep them. The file holds live session cookies:
+# keep it 0600, and never commit it.
+#
+# --allowed-hosts: the Host header is the FRONT-DOOR port (:26272). Never '*'.
+[Unit]
+Description=Shared headed Playwright MCP server (google-chrome, streamable-http on 127.0.0.1:26372)
+StopWhenUnneeded=yes
+
+[Service]
+Environment=XAUTHORITY=%h/.Xauthority
+# Chrome's own cache/config (crashpad DB etc.) inside the writable area.
+Environment=XDG_CACHE_HOME=%h/.cache/playwright-stealth-mcp/xdg-cache
+Environment=XDG_CONFIG_HOME=%h/.cache/playwright-stealth-mcp/xdg-config
+# The display decision needs other processes' /proc/PID/fd, which this unit's
+# sandbox (its own user namespace) cannot read -- so it is made by an
+# UNSANDBOXED ('+') pre-step and handed over in the runtime directory.
+RuntimeDirectory=playwright-stealth-mcp
+ExecStartPre=+/usr/bin/python3 %h/bin/playwright-mcp-pick-display.py \
+    --write %t/playwright-stealth-mcp/display
+ExecStart=/usr/bin/python3 %h/bin/playwright-mcp-pick-display.py \
+    --exec %t/playwright-stealth-mcp/display \
+    %h/.local/share/playwright-mcp/node_modules/.bin/playwright-mcp \
+    --browser chrome --executable-path /usr/bin/google-chrome \
+    --isolated \
+    --storage-state %h/.config/playwright-mcp/stealth-storage-state.json \
+    --host 127.0.0.1 --port 26372 \
+    --allowed-hosts 127.0.0.1:26272,localhost:26272 \
+    --idle-timeout 900000 \
+    --file-paths absolute \
+    --output-dir %h/.cache/playwright-stealth-mcp/output \
+    --output-max-size 536870912
+ExecStartPost=/usr/bin/python3 %h/bin/wait-listen.py 127.0.0.1 26372 30
+# No Restart=: on-demand unit (StopWhenUnneeded + on-failure = stop/start loop).
+Restart=no
+
+# ---- Resource limits ----
+# A headed real Chrome is heavier than headless shell: throttle from 2 GiB,
+# OOM-kill inside this cgroup only at 3 GiB.
+MemoryHigh=2G
+MemoryMax=3G
+MemorySwapMax=256M
+CPUQuota=200%
+TasksMax=1024
+Nice=10
+IOWeight=50
+OOMPolicy=kill
+
+# ---- Filesystem / privilege sandbox ----
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+# PrivateTmp hides the X sockets; hand Chrome the real ones back.
+BindReadOnlyPaths=/tmp/.X11-unix
+ReadWritePaths=%h/.cache/playwright-stealth-mcp -%h/local -%h/github
+NoNewPrivileges=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+UMask=0077

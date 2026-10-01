@@ -1,5 +1,5 @@
 # Shared Playwright MCP server (@playwright/mcp, streamable-http on
-# 127.0.0.1:8932), serving every Claude session on this host. Started on
+# 127.0.0.1:26371), serving every Claude session on this host. Started on
 # demand by playwright-mcp-proxy.service; stopped when that proxy idles out.
 # Installed (symlinked) by setup.sh playwright_mcp(), which also installs the
 # pinned server + its browser and registers the server with Claude Code.
@@ -9,14 +9,14 @@
 # (never `npx …@latest`, which re-resolved from the registry on every start).
 #
 # --allowed-hosts: clients reach us through the socket proxy, so the Host
-# header is the FRONT-DOOR port (:8931), not :8932. Keep the DNS-rebinding
+# header is the FRONT-DOOR port (:26271), not :26371. Keep the DNS-rebinding
 # Host check on and allow exactly that -- never '*'.
 #
 # Each HTTP client (Claude session) gets its own browser context -- we do NOT
 # pass --shared-browser-context. The browser itself is launched lazily on the
 # first browser tool call and closed after --idle-timeout without one.
 [Unit]
-Description=Shared Playwright MCP server (streamable-http on 127.0.0.1:8932)
+Description=Shared Playwright MCP server (streamable-http on 127.0.0.1:26371)
 StopWhenUnneeded=yes
 
 [Service]
@@ -30,13 +30,13 @@ Environment=XDG_CACHE_HOME=%h/.cache/playwright-mcp/xdg-cache
 Environment=XDG_CONFIG_HOME=%h/.cache/playwright-mcp/xdg-config
 ExecStart=%h/.local/share/playwright-mcp/node_modules/.bin/playwright-mcp \
     --headless --isolated \
-    --host 127.0.0.1 --port 8932 \
-    --allowed-hosts 127.0.0.1:8931,localhost:8931 \
+    --host 127.0.0.1 --port 26371 \
+    --allowed-hosts 127.0.0.1:26271,localhost:26271 \
     --idle-timeout 900000 \
     --file-paths absolute \
     --output-dir %h/.cache/playwright-mcp/output \
     --output-max-size 536870912
-ExecStartPost=/usr/bin/python3 %h/bin/wait-listen.py 127.0.0.1 8932 30
+ExecStartPost=/usr/bin/python3 %h/bin/wait-listen.py 127.0.0.1 26371 30
 # No Restart=: on-demand unit. Node exits non-zero on the SIGTERM that
 # StopWhenUnneeded sends, which on-failure would treat as a crash and restart
 # into a stop/start loop (seen with ngsw-mcp, 2026-08-22). The next client

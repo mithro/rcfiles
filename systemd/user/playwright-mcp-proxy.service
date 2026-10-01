@@ -1,10 +1,10 @@
-# Forwards the socket-activated 127.0.0.1:8931 to playwright-mcp.service on
-# :8932. Requires/After playwright-mcp.service, whose ExecStartPost waits until
-# :8932 accepts, so the first proxied connection is never refused.
+# Forwards the socket-activated 127.0.0.1:26271 to playwright-mcp.service on
+# :26371. Requires/After playwright-mcp.service, whose ExecStartPost waits until
+# :26371 accepts, so the first proxied connection is never refused.
 [Unit]
 Description=Shared Playwright MCP server proxy (socket -> playwright-mcp.service)
 Requires=playwright-mcp.service playwright-mcp.socket
 After=playwright-mcp.service playwright-mcp.socket
 
 [Service]
-ExecStart=/usr/lib/systemd/systemd-socket-proxyd --exit-idle-time=30min 127.0.0.1:8932
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd --exit-idle-time=30min 127.0.0.1:26371
