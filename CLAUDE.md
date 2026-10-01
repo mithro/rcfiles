@@ -102,6 +102,15 @@ The `linkit()` function in `setup.sh` implements a hostname-aware configuration 
 - Contains Claude Code settings, hooks, and custom configurations
 - Automatically cloned and symlinked during setup
 
+**Shared Playwright MCP server (`playwright_mcp()`):**
+- One sandboxed Playwright MCP server per host instead of the official plugin's per-session `npx @playwright/mcp@latest` (which left 13 idle copies on ten64)
+- `systemd/user/playwright-mcp.socket` listens on `127.0.0.1:8931`; the first connection starts `playwright-mcp-proxy.service` (systemd-socket-proxyd), which pulls in `playwright-mcp.service` on `:8932`; both stop after 30 min idle (`StopWhenUnneeded=`)
+- Pinned version (`PLAYWRIGHT_MCP_VERSION` in `setup.sh`) installed with npm into `~/.local/share/playwright-mcp`, with its own Chromium in `~/.cache/playwright-mcp/browsers`; bumping the version restarts a running server
+- The server is sandboxed: cgroup limits (MemoryMax 2G, CPUQuota 200%, TasksMax 1024), a read-only system and home with only `~/.cache/playwright-mcp`, `~/local` and `~/github` writable, and NoNewPrivileges
+- `setup.sh` registers it as user-scope HTTP server `playwright` (`claude mcp add`) and disables `playwright@claude-plugins-official`
+- Traps: `--allowed-hosts` must name the front-door port (`:8931`, the proxy passes the Host header through), and `XDG_CACHE_HOME` must point into the writable cache (Playwright writes `ms-playwright/b` there, not under `PLAYWRIGHT_BROWSERS_PATH`)
+- `bin/wait-listen.py` is the shared `ExecStartPost=` helper that holds the unit in "starting" until its port accepts connections
+
 ## Git Submodules
 
 The repository heavily uses git submodules for vim plugins and other tools. All submodules are defined in `.gitmodules`. After cloning, always run:

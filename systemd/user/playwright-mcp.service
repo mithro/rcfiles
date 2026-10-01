@@ -1,0 +1,73 @@
+# Shared Playwright MCP server (@playwright/mcp, streamable-http on
+# 127.0.0.1:8932), serving every Claude session on this host. Started on
+# demand by playwright-mcp-proxy.service; stopped when that proxy idles out.
+# Installed (symlinked) by setup.sh playwright_mcp(), which also installs the
+# pinned server + its browser and registers the server with Claude Code.
+#
+# Version is PINNED (PLAYWRIGHT_MCP_VERSION in setup.sh), installed with
+#   npm install --prefix ~/.local/share/playwright-mcp --save-exact @playwright/mcp@<ver>
+# (never `npx …@latest`, which re-resolved from the registry on every start).
+#
+# --allowed-hosts: clients reach us through the socket proxy, so the Host
+# header is the FRONT-DOOR port (:8931), not :8932. Keep the DNS-rebinding
+# Host check on and allow exactly that -- never '*'.
+#
+# Each HTTP client (Claude session) gets its own browser context -- we do NOT
+# pass --shared-browser-context. The browser itself is launched lazily on the
+# first browser tool call and closed after --idle-timeout without one.
+[Unit]
+Description=Shared Playwright MCP server (streamable-http on 127.0.0.1:8932)
+StopWhenUnneeded=yes
+
+[Service]
+# Private, version-matched browser dir (inside the writable cache: Playwright
+# writes lock files next to the browsers). setup.sh populates it.
+Environment=PLAYWRIGHT_BROWSERS_PATH=%h/.cache/playwright-mcp/browsers
+# Playwright keeps a browser-server registry at $XDG_CACHE_HOME/ms-playwright/b
+# (NOT under PLAYWRIGHT_BROWSERS_PATH), and Chromium writes its own cache and
+# config (crashpad DB etc.); point both inside the writable area.
+Environment=XDG_CACHE_HOME=%h/.cache/playwright-mcp/xdg-cache
+Environment=XDG_CONFIG_HOME=%h/.cache/playwright-mcp/xdg-config
+ExecStart=%h/.local/share/playwright-mcp/node_modules/.bin/playwright-mcp \
+    --headless --isolated \
+    --host 127.0.0.1 --port 8932 \
+    --allowed-hosts 127.0.0.1:8931,localhost:8931 \
+    --idle-timeout 900000 \
+    --file-paths absolute \
+    --output-dir %h/.cache/playwright-mcp/output \
+    --output-max-size 536870912
+ExecStartPost=/usr/bin/python3 %h/bin/wait-listen.py 127.0.0.1 8932 30
+# No Restart=: on-demand unit. Node exits non-zero on the SIGTERM that
+# StopWhenUnneeded sends, which on-failure would treat as a crash and restart
+# into a stop/start loop (seen with ngsw-mcp, 2026-08-22). The next client
+# connection re-pulls it through the proxy anyway.
+Restart=no
+
+# ---- Resource limits (cgroup; needs cpu/memory/pids delegated to user@) ----
+# Headless Chromium + node for several concurrent sessions fits comfortably in
+# ~1 GiB; throttle (reclaim) from 1.5 GiB, OOM-kill inside this cgroup only at
+# 2 GiB, and never let it push more than 256 MiB into swap.
+MemoryHigh=1536M
+MemoryMax=2G
+MemorySwapMax=256M
+CPUQuota=200%
+TasksMax=1024
+Nice=10
+IOWeight=50
+OOMPolicy=kill
+
+# ---- Filesystem / privilege sandbox ----
+# Read-only view of the whole system and home; writable only where the server
+# and Chromium legitimately write. Workspace-root file access (screenshots,
+# PDFs saved "into the project") is limited by playwright-mcp itself to the
+# client's roots, and here additionally to the source trees below ('-' =
+# skip if that tree doesn't exist on this host, rather than failing to start).
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+ReadWritePaths=%h/.cache/playwright-mcp -%h/local -%h/github
+NoNewPrivileges=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+UMask=0077

@@ -599,6 +599,56 @@ function claude_teleport {
 	sudo apt-get -y install claude-teleport
 }
 
+PLAYWRIGHT_MCP_VERSION=0.0.82
+
+function playwright_mcp {
+	# Hosts with Claude Code. ONE shared, sandboxed Playwright MCP server per
+	# host (systemd/user/playwright-mcp.*) instead of the official plugin's
+	# per-session `npx @playwright/mcp@latest` (13 idle copies seen on ten64,
+	# 2026-09-27). Socket-activated on 127.0.0.1:8931; see the unit comments.
+	if ! command -v claude > /dev/null || ! command -v npm > /dev/null; then
+		echo "playwright_mcp: claude or npm not installed, skipping" >&2
+		return 0
+	fi
+
+	local prefix=~/.local/share/playwright-mcp
+	local cache=~/.cache/playwright-mcp
+	local pkg="$prefix/node_modules/@playwright/mcp/package.json"
+	local before=""
+	if [ -f "$pkg" ]; then
+		before=$(node -p "require('$pkg').version")
+	fi
+
+	# Pinned server + the Chromium build that exact Playwright expects, in a
+	# private browser dir (the unit's sandbox can only write under $cache).
+	npm install --prefix "$prefix" --save-exact "@playwright/mcp@$PLAYWRIGHT_MCP_VERSION"
+	PLAYWRIGHT_BROWSERS_PATH="$cache/browsers" \
+		"$prefix/node_modules/.bin/playwright" install --only-shell chromium
+	# ReadWritePaths= fails the unit if a (non-optional) path is missing.
+	mkdir -p "$cache/output" "$cache/browsers" "$cache/xdg-cache" "$cache/xdg-config"
+
+	mkdir -p ~/.config/systemd/user
+	local unit
+	for unit in playwright-mcp.socket playwright-mcp-proxy.service playwright-mcp.service; do
+		ln -sf "$RCFILES/systemd/user/$unit" ~/.config/systemd/user/$unit
+	done
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user daemon-reload || true
+	XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user enable --now playwright-mcp.socket || true
+	# A running server keeps the old version until it idles out; only bounce it
+	# when the version actually changed (this ends open browser sessions).
+	if [ -n "$before" ] && [ "$before" != "$PLAYWRIGHT_MCP_VERSION" ]; then
+		XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user stop \
+			playwright-mcp-proxy.service playwright-mcp.service || true
+	fi
+
+	# Point Claude Code at the shared server, and turn off the per-session
+	# plugin it replaces (harmless if that plugin was never installed).
+	if ! claude mcp get playwright > /dev/null; then
+		claude mcp add --scope user --transport http playwright http://127.0.0.1:8931/mcp
+	fi
+	claude plugin disable playwright@claude-plugins-official || true
+}
+
 function tmux_persistence {
 	# All hosts. Run the tmux server (and the ssh-agent it fronts) as lingering
 	# systemd --user units so they survive any login/logout, SSH disconnect, or
@@ -780,6 +830,7 @@ ssh
 kitty_conf
 claude
 claude_teleport
+playwright_mcp
 tmux_pkg
 tmux_persistence
 tmux_saver
