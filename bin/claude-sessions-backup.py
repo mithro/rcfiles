@@ -86,7 +86,7 @@ def main() -> int:
     if local:
         dest_root = BACKUP_ROOT / label / "claude-sessions"
         dest_root.mkdir(parents=True, exist_ok=True)
-        dest = lambda name: str(dest_root / name)  # noqa: E731
+        dest = lambda name: str(dest_root / name)
         rsync_base = ["rsync", *RSYNC_OPTS]
     else:
         if not KEY.exists():
@@ -96,7 +96,7 @@ def main() -> int:
             )
             return 2
         # rrsync on the server makes paths relative to this machine's claude-sessions dir.
-        dest = lambda name: f"tim@{BACKUP_HOST}:{name}"  # noqa: E731
+        dest = lambda name: f"tim@{BACKUP_HOST}:{name}"
         rsync_base = ["rsync", *RSYNC_OPTS, "-e", SSH]
 
     print(
@@ -109,7 +109,7 @@ def main() -> int:
             print(f"  skip {src}: not present")
             continue
         cmd = [*rsync_base, str(src_path), dest(name)]
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        r = subprocess.run(cmd, capture_output=True, text=True, check=False)
         stats = {
             ln.split(":")[0].strip(): ln.split(":", 1)[1].strip()
             for ln in r.stdout.splitlines()
@@ -142,6 +142,7 @@ def main() -> int:
                 [*rsync_base, str(marker), dest(".last-backup")],
                 capture_output=True,
                 text=True,
+                check=False,
             )
             if r.returncode != 0:
                 failures += 1
