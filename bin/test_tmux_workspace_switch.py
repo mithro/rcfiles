@@ -11,11 +11,11 @@ repair -> binding), and each builds on the state the previous one left.
 
 stdlib-only; run with:  uv run python bin/test_tmux_workspace_switch.py
 """
+
 import os
 import pty
 import signal
 import subprocess
-import sys
 import tempfile
 import threading
 import time
@@ -24,14 +24,13 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 HELPER = os.path.join(HERE, "tmux-workspace-switch")
 
-FILTER = ("#{||:#{==:#{session_group},},"
-          "#{==:#{session_name},#{session_group}}}")
+FILTER = "#{||:#{==:#{session_group},},#{==:#{session_name},#{session_group}}}"
 
 # The exact binding under test (kept in sync with tmux/tmux.conf by
 # test_00_binding_matches_tmux_conf).
 BIND_LINE = (
-    "bind s choose-tree -Zs -f '%s' "
-    '"run-shell -b \\"%s \'%%%%\' \'#{client_name}\'\\""' % (FILTER, HELPER)
+    f"bind s choose-tree -Zs -f '{FILTER}' "
+    f"\"run-shell -b \\\"{HELPER} '%%' '#{{client_name}}'\\\"\""
 )
 
 
@@ -52,10 +51,22 @@ class Client:
         env["TERM"] = "xterm-256color"
         pid, fd = pty.fork()
         if pid == 0:  # child
-            os.execvpe("tmux", ["tmux", "-S", sock,
-                                "new-session", "-t", sess, ";",
-                                "set-option", "destroy-unattached",
-                                "keep-last"], env)
+            os.execvpe(
+                "tmux",
+                [
+                    "tmux",
+                    "-S",
+                    sock,
+                    "new-session",
+                    "-t",
+                    sess,
+                    ";",
+                    "set-option",
+                    "destroy-unattached",
+                    "keep-last",
+                ],
+                env,
+            )
         self.pid, self.fd = pid, fd
         self.name = None  # /dev/pts/N, filled in by setUpClass
         # Drain continuously so tmux never blocks writing to the client.
@@ -105,34 +116,43 @@ class Test(unittest.TestCase):
     def tearDownClass(cls):
         cls.c1.close()
         cls.c2.close()
-        subprocess.run(["tmux", "-S", cls.sock, "kill-server"],
-                       capture_output=True)
+        subprocess.run(
+            ["tmux", "-S", cls.sock, "kill-server"], capture_output=True, check=False
+        )
         cls.dir.cleanup()
 
     @classmethod
     def t(cls, *args):
-        return subprocess.run(["tmux", "-S", cls.sock] + list(args),
-                              check=True, capture_output=True,
-                              text=True).stdout
+        return subprocess.run(
+            ["tmux", "-S", cls.sock] + list(args),
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
 
     @classmethod
     def clients(cls):
-        out = cls.t("list-clients", "-F",
-                    "#{client_name}\t#{client_session}")
+        out = cls.t("list-clients", "-F", "#{client_name}\t#{client_session}")
         return dict(line.split("\t") for line in out.splitlines())
 
     @classmethod
     def sessions(cls):
-        out = cls.t("list-sessions", "-F",
-                    "#{session_name}\t#{session_group}\t"
-                    "#{window_index}\t#{destroy-unattached}")
-        return {r[0]: r[1:] for r in
-                (line.split("\t") for line in out.splitlines())}
+        out = cls.t(
+            "list-sessions",
+            "-F",
+            "#{session_name}\t#{session_group}\t#{window_index}\t#{destroy-unattached}",
+        )
+        return {r[0]: r[1:] for r in (line.split("\t") for line in out.splitlines())}
 
     def run_helper(self, target, client):
         env = dict(os.environ, TMUX=self.sock + ",0,0")
-        r = subprocess.run([HELPER, target, client], env=env,
-                           capture_output=True, text=True)
+        r = subprocess.run(
+            [HELPER, target, client],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
         self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_00_binding_matches_tmux_conf(self):
@@ -141,8 +161,9 @@ class Test(unittest.TestCase):
         with open(os.path.join(HERE, os.pardir, "tmux", "tmux.conf")) as f:
             conf = f.read()
         expect = BIND_LINE.replace(HELPER, "~/bin/tmux-workspace-switch")
-        self.assertIn(expect, conf,
-                      "tmux/tmux.conf bind s drifted from the tested line")
+        self.assertIn(
+            expect, conf, "tmux/tmux.conf bind s drifted from the tested line"
+        )
 
     def test_01_clones_have_independent_current_windows(self):
         s1, s2 = self.clients()[self.c1.name], self.clients()[self.c2.name]
@@ -150,22 +171,27 @@ class Test(unittest.TestCase):
         self.t("select-window", "-t", f"{s1}:5")
         self.t("select-window", "-t", f"{s2}:1")
         self.assertEqual(self.sessions()[s1][1], "5")
-        self.assertEqual(self.sessions()[s2][1], "1",
-                         "client 2 must not follow client 1's switch")
+        self.assertEqual(
+            self.sessions()[s2][1], "1", "client 2 must not follow client 1's switch"
+        )
 
     def test_02_switch_to_other_workspace_gets_fresh_clone(self):
         old = self.clients()[self.c1.name]
         self.run_helper("=B", self.c1.name)
-        wait_for(lambda: old not in self.sessions(),
-                 "old clone reaped by destroy-unattached")
+        wait_for(
+            lambda: old not in self.sessions(), "old clone reaped by destroy-unattached"
+        )
         new = self.clients()[self.c1.name]
         group, _win, destroy = self.sessions()[new]
         self.assertEqual(group, "B", "clone must join B's group")
         self.assertNotEqual(new, "B", "must never land on the base")
         self.assertEqual(destroy, "keep-last")
         self.assertIn("B", self.sessions(), "B's base must survive")
-        self.assertEqual(self.sessions()[self.clients()[self.c2.name]][0],
-                         "A", "other client must be untouched")
+        self.assertEqual(
+            self.sessions()[self.clients()[self.c2.name]][0],
+            "A",
+            "other client must be untouched",
+        )
 
     def test_03_window_target_selects_window_in_clone(self):
         self.run_helper("=B:2", self.c2.name)
@@ -175,15 +201,17 @@ class Test(unittest.TestCase):
     def test_04_same_group_selects_in_place(self):
         before = self.clients()[self.c2.name]
         self.run_helper("=B:0", self.c2.name)
-        self.assertEqual(self.clients()[self.c2.name], before,
-                         "same-group switch must not create a new clone")
+        self.assertEqual(
+            self.clients()[self.c2.name],
+            before,
+            "same-group switch must not create a new clone",
+        )
         self.assertEqual(self.sessions()[before][1], "0")
 
     def test_05_client_parked_on_base_is_repaired(self):
         # Park c2 directly on the base (the pre-fix failure mode).
         self.t("switch-client", "-c", self.c2.name, "-t", "B")
-        wait_for(lambda: self.clients()[self.c2.name] == "B",
-                 "c2 parked on base")
+        wait_for(lambda: self.clients()[self.c2.name] == "B", "c2 parked on base")
         self.run_helper("=B", self.c2.name)
         new = self.clients()[self.c2.name]
         self.assertNotEqual(new, "B", "repair must move client off base")
@@ -195,11 +223,13 @@ class Test(unittest.TestCase):
         # A and B, cursor on the first item (its own clone is hidden), so
         # Enter selects A -> c1 must land on a fresh A clone.
         before = self.clients()[self.c1.name]
-        self.c1.send("\x02s")          # prefix+s -> choose-tree
+        self.c1.send("\x02s")  # prefix+s -> choose-tree
         time.sleep(0.8)
-        self.c1.send("\r")             # select first (topmost) item: A
-        wait_for(lambda: self.clients().get(self.c1.name) != before,
-                 "binding switched c1 to a new session")
+        self.c1.send("\r")  # select first (topmost) item: A
+        wait_for(
+            lambda: self.clients().get(self.c1.name) != before,
+            "binding switched c1 to a new session",
+        )
         now = self.clients()[self.c1.name]
         group, _win, destroy = self.sessions()[now]
         self.assertEqual(group, "A", "binding must land on an A-group clone")
@@ -212,11 +242,12 @@ class Test(unittest.TestCase):
         # pane under the choose-tree overlay, not the tree itself, so the
         # filter expression is the directly testable part.)
         sess = self.sessions()
-        self.assertTrue(any(g and n != g for n, (g, _w, _d) in sess.items()),
-                        "test needs at least one live clone to be meaningful")
+        self.assertTrue(
+            any(g and n != g for n, (g, _w, _d) in sess.items()),
+            "test needs at least one live clone to be meaningful",
+        )
         for name, (group, _win, _destroy) in sess.items():
-            shown = self.t("display-message", "-p", "-t", name,
-                           FILTER).strip()
+            shown = self.t("display-message", "-p", "-t", name, FILTER).strip()
             want = "1" if (not group or name == group) else "0"
             self.assertEqual(shown, want, f"filter for {name}")
 
