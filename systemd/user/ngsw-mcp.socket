@@ -1,0 +1,19 @@
+# netgear switch MCP server -- socket-activated front door.
+#
+# Nothing runs until a client (Claude Code, configured with
+# http://127.0.0.1:8765/mcp) connects. systemd then starts
+# ngsw-mcp-proxy.service, which pulls in ngsw-mcp.service (the real server on
+# 127.0.0.1:8766) and forwards bytes. When the proxy has been idle for
+# --exit-idle-time it exits, and StopWhenUnneeded= stops the server too, so one
+# shared ngsw-mcp serves every Claude session on this host and costs nothing
+# while idle. ten64-welland, 2026-08-22.
+[Unit]
+Description=netgear switch MCP server (socket-activated, 127.0.0.1:8765)
+
+[Socket]
+ListenStream=127.0.0.1:8765
+NoDelay=true
+Service=ngsw-mcp-proxy.service
+
+[Install]
+WantedBy=sockets.target

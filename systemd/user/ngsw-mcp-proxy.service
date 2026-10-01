@@ -1,0 +1,10 @@
+# Forwards the socket-activated 127.0.0.1:8765 to ngsw-mcp.service on :8766.
+# Requires/After ngsw-mcp.service, whose ExecStartPost waits until :8766
+# accepts, so the very first proxied connection is never refused.
+[Unit]
+Description=netgear switch MCP server proxy (socket -> ngsw-mcp.service)
+Requires=ngsw-mcp.service ngsw-mcp.socket
+After=ngsw-mcp.service ngsw-mcp.socket
+
+[Service]
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd --exit-idle-time=15min 127.0.0.1:8766
