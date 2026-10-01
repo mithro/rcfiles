@@ -685,7 +685,12 @@ function mcp_socket_units {
 	# from the last install, restart the socket and stop the proxy + server so
 	# everything comes back on the new config: a running .socket keeps its old
 	# ListenStream=, and a running server its old ExecStart=, until bounced
-	# (seen moving the ports, 2026-10-01). Clients just reconnect.
+	# (seen moving the ports, 2026-10-01). Claude Code clients get a 404 for
+	# their lost MCP session and transparently re-initialize (verified
+	# 2026-10-01); a stealth/playwright browser's open tabs are lost. Helper
+	# scripts the units run (~/bin/wait-listen.py, ~/bin/playwright-mcp-*) are
+	# not fingerprinted: they are read afresh at every server start anyway.
+	# The first run on a host (no stamp yet) always bounces.
 	local name=$1 extra=${2:-}
 	local units=("$name.socket" "$name-proxy.service" "$name.service")
 	local stamp=~/.local/state/rcfiles/$name.fingerprint
@@ -701,7 +706,12 @@ function mcp_socket_units {
 		XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user stop \
 			"$name-proxy.service" "$name.service" || true
 		XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user reset-failed "$name.socket" || true
-		XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user restart "$name.socket" || true
+		# Only record the new fingerprint once the bounce worked, so a
+		# transient failure (e.g. port briefly busy) is retried next run.
+		if ! XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user restart "$name.socket"; then
+			echo "mcp_socket_units: restarting $name.socket failed; will retry next run" >&2
+			return 0
+		fi
 	fi
 	echo "$fingerprint" > "$stamp"
 }
@@ -710,18 +720,25 @@ function claude_mcp_http {
 	# claude_mcp_http NAME URL: register a user-scope HTTP MCP server with
 	# Claude Code, or re-point an existing NAME (of any transport) at URL. A
 	# bare `claude mcp get || add` would leave old URLs behind forever.
-	local name=$1 url=$2 have="" current=""
+	# Never fails: ~/.claude.json is rewritten constantly by running sessions,
+	# and a torn read must not abort the rest of setup.sh (set -e).
+	local name=$1 url=$2 entry=""
 	if [ -f ~/.claude.json ]; then
-		have=$(jq -r --arg n "$name" 'if .mcpServers[$n] then "yes" else "" end' ~/.claude.json)
-		current=$(jq -r --arg n "$name" '.mcpServers[$n].url // ""' ~/.claude.json)
+		if ! entry=$(jq -r --arg n "$name" \
+			'.mcpServers[$n] // empty | "\(.type // "")\t\(.url // "")"' ~/.claude.json); then
+			echo "claude_mcp_http: cannot read ~/.claude.json; $name not checked" >&2
+			return 0
+		fi
 	fi
-	if [ "$current" = "$url" ]; then
+	if [ "$entry" = $'http\t'"$url" ]; then
 		return 0
 	fi
-	if [ -n "$have" ]; then
-		claude mcp remove --scope user "$name"
+	if [ -n "$entry" ]; then
+		claude mcp remove --scope user "$name" ||
+			echo "claude_mcp_http: removing old $name failed" >&2
 	fi
-	claude mcp add --scope user --transport http "$name" "$url"
+	claude mcp add --scope user --transport http "$name" "$url" ||
+		echo "claude_mcp_http: adding $name -> $url failed" >&2
 }
 
 function tmux_persistence {
