@@ -40,9 +40,14 @@ LABELS = {
 }
 
 # (source, name under claude-sessions/). Trailing slash = directory contents.
+# Single files go to "./" (into the directory, keeping their own name), never
+# to a named destination: since rsync 3.5.0 (big-storage, 2026-09-30) a
+# single-file transfer to a named path through rrsync fails every time with
+# "delete_file: unlink(4) failed: Operation not permitted", while the same
+# file sent to the directory succeeds.
 SOURCES = [
     ("~/.claude/projects/", "projects/"),
-    ("~/.claude/history.jsonl", "history.jsonl"),
+    ("~/.claude/history.jsonl", "./"),
     ("~/.claude/todos/", "todos/"),
     ("~/.config/superpowers/conversation-archive/", "conversation-archive/"),
 ]
@@ -139,7 +144,7 @@ def main() -> int:
             marker = pathlib.Path(td) / ".last-backup"
             marker.write_text(stamp)
             r = subprocess.run(
-                [*rsync_base, str(marker), dest(".last-backup")],
+                [*rsync_base, str(marker), dest("./")],
                 capture_output=True,
                 text=True,
                 check=False,
