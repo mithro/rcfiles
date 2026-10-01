@@ -1,0 +1,14 @@
+[Unit]
+Description=Hourly backup of Claude Code session storage to big-storage
+
+[Timer]
+OnCalendar=hourly
+# Catch up after suspend/power-off (laptops): fire immediately if a run was missed.
+Persistent=true
+# Spread the hosts out so they don't all hit big-storage at :00.
+RandomizedDelaySec=10min
+AccuracySec=1min
+Unit=claude-sessions-backup.service
+
+[Install]
+WantedBy=timers.target
