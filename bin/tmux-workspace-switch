@@ -86,8 +86,12 @@ def main():
     def group_key(name):
         return sessions[name] or name
 
-    current = tmux("display-message", "-p", "-c", client,
-                   "-F", "#{client_session}").strip()
+    # Look the client up by name. NOT `display-message -p -c CLIENT`: -c only
+    # picks which client would *show* a message; the format is expanded
+    # against the default target (the most recently active client), so with
+    # two logins it returns the OTHER client's session (observed on next-3.8).
+    current = dict(rows(tmux(
+        "list-clients", "-F", "#{client_name}\t#{client_session}"))).get(client, "")
     # "Proper clone" = a grouped session that is not the group's base.
     on_own_clone = (current in sessions and sessions[current]
                     and current != sessions[current])
