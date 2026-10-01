@@ -55,7 +55,17 @@ RSYNC_OPTS = [
     "--exclude=*.lock",
     "--stats",
 ]
-SSH = f"ssh -i {KEY} -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20"
+# -F /dev/null: ignore ~/.ssh/config so no other IdentityFile (some hosts keep
+# an unencrypted, unrestricted key there) can be offered instead of KEY, and
+# no ControlMaster socket from an interactive login can be reused, which would
+# silently bypass the rrsync restriction. Host keys come from the per-host file
+# the shared ssh config already uses for big-storage (rsync splits -e on
+# spaces, so only one file can be named here).
+SSH = (
+    f"ssh -F /dev/null -i {KEY} -o IdentitiesOnly=yes -o BatchMode=yes"
+    " -o ControlMaster=no -o ControlPath=none -o ConnectTimeout=20"
+    " -o UserKnownHostsFile=~/.ssh/known_hosts.big-storage"
+)
 
 
 def machine_label() -> str:
