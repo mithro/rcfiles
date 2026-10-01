@@ -1,0 +1,10 @@
+# Forwards the socket-activated 127.0.0.1:26272 to playwright-stealth-mcp.service
+# on :26372. Requires/After that service, whose ExecStartPost waits until :26372
+# accepts, so the first proxied connection is never refused.
+[Unit]
+Description=Shared headed Playwright MCP server proxy (socket -> playwright-stealth-mcp.service)
+Requires=playwright-stealth-mcp.service playwright-stealth-mcp.socket
+After=playwright-stealth-mcp.service playwright-stealth-mcp.socket
+
+[Service]
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd --exit-idle-time=30min 127.0.0.1:26372

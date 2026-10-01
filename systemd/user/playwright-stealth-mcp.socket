@@ -1,0 +1,19 @@
+# Shared HEADED ("stealth") Playwright MCP server -- socket-activated front door.
+#
+# Replaces the user-scope stdio "playwright-stealth" server (one
+# `npx @playwright/mcp@latest --browser chrome --executable-path
+# /usr/bin/google-chrome` + a real headed Chrome on DISPLAY=:99 per Claude
+# session). setup.sh playwright_stealth_mcp() registers it with Claude Code
+# (user scope) as http://127.0.0.1:26272/mcp. Same socket -> proxy -> server
+# pattern as playwright-mcp.socket (headless, :26271; the port plan is
+# documented there). desktop, 2026-10-01.
+[Unit]
+Description=Shared headed Playwright MCP server (socket-activated, 127.0.0.1:26272)
+
+[Socket]
+ListenStream=127.0.0.1:26272
+NoDelay=true
+Service=playwright-stealth-mcp-proxy.service
+
+[Install]
+WantedBy=sockets.target
