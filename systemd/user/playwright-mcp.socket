@@ -3,15 +3,26 @@
 # Replaces the claude-plugins-official "playwright" plugin, which started one
 # `npx @playwright/mcp@latest` per Claude session (13 idle copies seen
 # 2026-09-27). setup.sh playwright_mcp() registers it with Claude Code (user
-# scope) as http://127.0.0.1:8931/mcp. The first connection starts
+# scope) as http://127.0.0.1:26271/mcp. The first connection starts
 # playwright-mcp-proxy.service, which pulls in playwright-mcp.service (the real,
-# sandboxed server on 127.0.0.1:8932). When the proxy idles out it exits and
+# sandboxed server on 127.0.0.1:26371). When the proxy idles out it exits and
 # StopWhenUnneeded= stops the server too. Same pattern as ngsw-mcp.socket.
+#
+# Port plan, identical on every host: MCP front doors are 2627x (M-C-P = 6-2-7
+# on a phone keypad), each backend is front door + 100:
+#   playwright          26271 -> 26371   (all Claude hosts)
+#   playwright-stealth  26272 -> 26372   (google-chrome + remote display hosts)
+#   netgear (ngsw-mcp)  26273 -> 26373   (ten64)
+# Below the Linux ephemeral range (32768+) and clear of the 3000/5000/8000/
+# 9000 dev-server habits (a github.io preview on 8931 collided first).
+#
+# Caveat: every open Claude session holds a standalone MCP GET (SSE) stream,
+# so --exit-idle-time only fires once no session is open at all.
 [Unit]
-Description=Shared Playwright MCP server (socket-activated, 127.0.0.1:8931)
+Description=Shared Playwright MCP server (socket-activated, 127.0.0.1:26271)
 
 [Socket]
-ListenStream=127.0.0.1:8931
+ListenStream=127.0.0.1:26271
 NoDelay=true
 Service=playwright-mcp-proxy.service
 
