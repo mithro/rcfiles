@@ -461,9 +461,16 @@ function ssh_agent_mux {
 		return 0
 	fi
 
-	echo "Installing ssh-agent-mux from repo cache..."
-	cp "$CACHED_BIN" ~/bin/ssh-agent-mux
-	chmod 755 ~/bin/ssh-agent-mux
+	# On a server the mux is normally RUNNING from ~/bin/ssh-agent-mux, and cp
+	# onto a running executable fails "Text file busy" -- aborting setup.sh
+	# (set -e) on every rerun. install(1) unlinks the busy file and creates a
+	# fresh one instead; the running mux keeps its old inode until restarted.
+	if cmp -s "$CACHED_BIN" ~/bin/ssh-agent-mux; then
+		echo "ssh-agent-mux already up to date"
+	else
+		echo "Installing ssh-agent-mux from repo cache..."
+		install -m 755 "$CACHED_BIN" ~/bin/ssh-agent-mux
+	fi
 
 	# Set up config symlink
 	mkdir -p ~/.config/ssh-agent-mux
