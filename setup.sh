@@ -494,8 +494,10 @@ function ssh_agent_mux {
 	XDG_RUNTIME_DIR="/run/user/$(id -u)" ~/bin/ssh-agent-mux --install-service \
 		|| echo "Warning: ssh-agent-mux --install-service failed" >&2
 
-	# Install drop-in override (symlink directory so updates come from repo)
-	ln -sf "$RCFILES/ssh/systemd/ross-williams-ssh-agent-mux.service.d" \
+	# Install drop-in override (symlink directory so updates come from repo).
+	# -n: on a rerun the link already exists and points at a directory; plain
+	# -sf would follow it and drop a stray self-link INSIDE the repo dir.
+	ln -sfn "$RCFILES/ssh/systemd/ross-williams-ssh-agent-mux.service.d" \
 		~/.config/systemd/user/ross-williams-ssh-agent-mux.service.d
 
 	# Reload and enable the mux service (ssh-agent.service is enabled by ssh_agent).
