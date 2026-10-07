@@ -594,12 +594,19 @@ function claude_teleport {
 	# Add the go-claude-teleport apt repository. It is a flat, per-suite repo
 	# of a single static binary; that binary is suite-independent, so the
 	# trixie suite is used on every machine (Debian and Ubuntu alike).
-	sudo install -d -m0755 /etc/apt/keyrings
-	curl -fsSL https://mith.ro/go-claude-teleport/go-claude-teleport.gpg \
-		| sudo tee /etc/apt/keyrings/go-claude-teleport.gpg > /dev/null
-	sudo chmod go+r /etc/apt/keyrings/go-claude-teleport.gpg
-	echo "deb [signed-by=/etc/apt/keyrings/go-claude-teleport.gpg] https://mith.ro/go-claude-teleport/trixie/ ./" \
-		| sudo tee /etc/apt/sources.list.d/go-claude-teleport.list > /dev/null
+	#
+	# Hosts whose apt sources are ansible-managed (the ten64s, big-storage)
+	# already carry the repo, through the apt proxy; a direct mith.ro .list
+	# beside it fails the apt_sources role's proxy-bypass assert (same guard
+	# as tmux_saver below).
+	if ! grep -qs 'go-claude-teleport' /etc/apt/sources.list.d/*.sources; then
+		sudo install -d -m0755 /etc/apt/keyrings
+		curl -fsSL https://mith.ro/go-claude-teleport/go-claude-teleport.gpg \
+			| sudo tee /etc/apt/keyrings/go-claude-teleport.gpg > /dev/null
+		sudo chmod go+r /etc/apt/keyrings/go-claude-teleport.gpg
+		echo "deb [signed-by=/etc/apt/keyrings/go-claude-teleport.gpg] https://mith.ro/go-claude-teleport/trixie/ ./" \
+			| sudo tee /etc/apt/sources.list.d/go-claude-teleport.list > /dev/null
+	fi
 
 	# Update and install (apt-get install upgrades to the newest published).
 	sudo apt-get update
