@@ -613,7 +613,10 @@ function playwright_mcp {
 	# host (systemd/user/playwright-mcp.*) instead of the official plugin's
 	# per-session `npx @playwright/mcp@latest` (13 idle copies seen on ten64,
 	# 2026-09-27). Socket-activated on 127.0.0.1:8931; see the unit comments.
-	if ! command -v claude > /dev/null || ! command -v npm > /dev/null; then
+	# NB: this script defines a `claude` FUNCTION (the dot-claude step), which
+	# shadows the CLI: `command -v claude` would find the function, so look on
+	# PATH with `type -P`, and run the CLI below as `command claude`.
+	if ! type -P claude > /dev/null || ! command -v npm > /dev/null; then
 		echo "playwright_mcp: claude or npm not installed, skipping" >&2
 		return 0
 	fi
@@ -650,10 +653,10 @@ function playwright_mcp {
 
 	# Point Claude Code at the shared server, and turn off the per-session
 	# plugin it replaces (harmless if that plugin was never installed).
-	if ! claude mcp get playwright > /dev/null; then
-		claude mcp add --scope user --transport http playwright http://127.0.0.1:8931/mcp
+	if ! command claude mcp get playwright > /dev/null; then
+		command claude mcp add --scope user --transport http playwright http://127.0.0.1:8931/mcp
 	fi
-	claude plugin disable playwright@claude-plugins-official || true
+	command claude plugin disable playwright@claude-plugins-official || true
 }
 
 function ngsw_mcp {
