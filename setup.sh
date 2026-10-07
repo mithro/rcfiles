@@ -595,10 +595,10 @@ function claude_teleport {
 	# of a single static binary; that binary is suite-independent, so the
 	# trixie suite is used on every machine (Debian and Ubuntu alike).
 	#
-	# Hosts whose apt sources are ansible-managed (the ten64s, big-storage)
-	# already carry the repo, through the apt proxy; a direct mith.ro .list
-	# beside it fails the apt_sources role's proxy-bypass assert (same guard
-	# as tmux_saver below).
+	# Hosts that already carry the repo as an ansible-rendered .sources
+	# (through the apt proxy) must not get a direct mith.ro .list beside it:
+	# that fails the apt_sources role's proxy-bypass assert (same guard as
+	# tmux_saver below).
 	if ! grep -qs 'go-claude-teleport' /etc/apt/sources.list.d/*.sources; then
 		sudo install -d -m0755 /etc/apt/keyrings
 		curl -fsSL https://mith.ro/go-claude-teleport/go-claude-teleport.gpg \
