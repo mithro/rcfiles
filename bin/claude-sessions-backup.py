@@ -89,6 +89,14 @@ def main() -> int:
     label = machine_label()
     local = socket.gethostname().split(".")[0] == "big-storage"
     if local:
+        # Never recreate /backups/machines on the root fs when the volume isn't
+        # mounted (as happened after the 2026-10-20 crash).
+        if not os.path.ismount("/backups") or not BACKUP_ROOT.is_dir():
+            print(
+                f"/backups is not mounted (or {BACKUP_ROOT} is missing); refusing to back up",
+                file=sys.stderr,
+            )
+            return 2
         dest_root = BACKUP_ROOT / label / "claude-sessions"
         dest_root.mkdir(parents=True, exist_ok=True)
         dest = lambda name: str(dest_root / name)
