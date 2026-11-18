@@ -71,8 +71,11 @@ _rc_tmux__value()
             _rc_tmux__lines list-buffers -F '#{buffer_name}'
             ;;
         key-table)
+            # Parsed from the plain listing (`bind-key [-r] -T table key ...`):
+            # `list-keys -F` would be neater but tmux only gained it in 3.5.
             _comp_compgen_split -l -- "$(_comp_cmd_tmux__run list-keys \
-                -F '#{key_table}' 2>/dev/null | sort -u)"
+                2>/dev/null |
+                sed -n -e 's/^bind-key[^T]*-T  *\([^ ]*\).*/\1/p' | sort -u)"
             ;;
         option)
             # Server, session and window options (user @options included);
