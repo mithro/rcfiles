@@ -22,13 +22,31 @@ for _rc_tmux_f in /usr/share/bash-completion/completions/tmux \
 done
 unset _rc_tmux_f
 
-# Upstream needs bash-completion >= 2.12; without it there is nothing to wrap.
-declare -F _comp_cmd_tmux__value >/dev/null || return 0
+# Upstream needs the bash-completion >= 2.12 API. Test for that API, not for
+# upstream's functions: the vendored file defines those on any version, and
+# would then print "command not found" on every <TAB>.
+declare -F _comp_initialize >/dev/null &&
+    declare -F _comp_cmd_tmux__value >/dev/null || return 0
 
 # Offer the lines printed by `tmux "$@"` that match the word being completed.
+#
+# Names are user-chosen (`my session`) and bash inserts a candidate verbatim,
+# so each is offered shell-escaped. The matching is done here rather than by
+# compgen so that it compares like with like: the name as tmux prints it
+# against the half-typed word with its quoting removed.
 _rc_tmux__lines()
 {
-    _comp_compgen_split -l -- "$(_comp_cmd_tmux__run "$@" 2>/dev/null)"
+    local line quoted word=$cur
+    local -a REPLY
+    if _comp_dequote "$cur"; then
+        word=${REPLY[0]-}
+    fi
+    while IFS= read -r line; do
+        if [[ $line == "$word"* ]]; then
+            printf -v quoted '%q' "$line"
+            COMPREPLY+=("$quoted")
+        fi
+    done < <(_comp_cmd_tmux__run "$@" 2>/dev/null)
 }
 
 # Complete the value types upstream leaves out.
