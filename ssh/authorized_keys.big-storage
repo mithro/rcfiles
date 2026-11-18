@@ -1,0 +1,13 @@
+# Appended to ~/.ssh/authorized_keys by setup.sh on big-storage only.
+#
+# One passphrase-less key per machine for bin/claude-sessions-backup.py, each
+# pinned by rrsync to that machine's own directory: write-only (-wo), and with
+# rsync's --delete*/--remove* options refused (-no-del), so a leaked key can
+# neither read any backup nor prune one. To add a machine:
+#   ssh-keygen -t ed25519 -N "" -f ~/.ssh/keys/claude-sessions-backup
+# then add its .pub here, mkdir -m700 the directory, and re-run setup.sh (or
+# append the line by hand) on big-storage.
+restrict,command="/usr/bin/rrsync -wo -no-del /backups/machines/x1c-work.welland.mithis.com/claude-sessions" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKPwKtT5KncM5fxvmdobIwwzVXXxWHX6Rx1wgr1qGxUj claude-sessions-backup@x1c-work.welland.mithis.com
+restrict,command="/usr/bin/rrsync -wo -no-del /backups/machines/desktop.buddy.mithis.com/claude-sessions" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJyMKlcI80jSc6ehq863lPnY6F3+l3g4gqm+gd5J7UFf claude-sessions-backup@desktop.buddy.mithis.com
+restrict,command="/usr/bin/rrsync -wo -no-del /backups/machines/ten64.welland.mithis.com/claude-sessions" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHv6aGYqVvtIWl4noWiRI4VuvppglFGDPA9pDKGH7ICr claude-sessions-backup@ten64.welland.mithis.com
+restrict,command="/usr/bin/rrsync -wo -no-del /backups/machines/ten64.monarto.mithis.com/claude-sessions" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFNEPb23Co+mQgNPWgD30QM7XbhNUPoAxHn3BkD/PPot claude-sessions-backup@ten64.monarto.mithis.com

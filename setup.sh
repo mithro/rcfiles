@@ -219,6 +219,17 @@ function ssh {
 				cat $RCFILES/ssh/authorized_keys >> ~/.ssh/authorized_keys.tmp
 			fi
 
+			# Append this host's own keys (ssh/authorized_keys.<short-hostname>).
+			# The file is rebuilt from scratch on every run, so a key that only
+			# one server should accept has to live here: the
+			# claude-sessions-backup keys were added to big-storage by hand,
+			# and the 2026-10-08 setup run silently removed all of them.
+			HOST_KEYS="$RCFILES/ssh/authorized_keys.$(hostname -s)"
+			if [ -f "$HOST_KEYS" ]; then
+				echo "Appending $(basename "$HOST_KEYS")"
+				cat "$HOST_KEYS" >> ~/.ssh/authorized_keys.tmp
+			fi
+
 			# Move to final location
 			mv ~/.ssh/authorized_keys.tmp ~/.ssh/authorized_keys
 			chmod 600 ~/.ssh/authorized_keys
@@ -823,10 +834,15 @@ function claude_sessions_backup {
 	# Two host-specific pieces are NOT done here and must be set up once by
 	# hand on a new machine (they involve key material):
 	#   1. ssh-keygen -t ed25519 -N "" -f ~/.ssh/keys/claude-sessions-backup
-	#   2. on big-storage, append to ~/.ssh/authorized_keys:
-	#      restrict,command="/usr/bin/rrsync /backups/machines/<machine>/claude-sessions" <pubkey>
-	#      and mkdir -m700 that claude-sessions directory.
+	#   2. add the .pub to ssh/authorized_keys.big-storage (format and reasons
+	#      are in that file), re-run setup.sh on big-storage so it reaches
+	#      ~/.ssh/authorized_keys, and mkdir -m700
+	#      /backups/machines/<machine>/claude-sessions there.
 	# big-storage itself copies locally and needs neither.
+	#
+	# bash/include/claude-sessions-backup prints a warning at shell start when
+	# this machine (or, on big-storage, any machine) has gone 48h without a
+	# full backup.
 	mkdir -p ~/.config/systemd/user
 	ln -sf "$RCFILES/systemd/user/claude-sessions-backup.service" \
 		~/.config/systemd/user/claude-sessions-backup.service

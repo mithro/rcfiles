@@ -6,6 +6,7 @@
 |------|-------------|---------|
 | `config` | `~/.ssh/config` | SSH client config (ControlMaster, host-specific settings) |
 | `authorized_keys` | Appended to `~/.ssh/authorized_keys` | Public keys for server installs |
+| `authorized_keys.<short-hostname>` | Appended to `~/.ssh/authorized_keys` on that host only | Keys one server alone should accept (`authorized_keys.big-storage`: the rrsync-restricted `claude-sessions-backup` keys) |
 | `keys/` | `~/.ssh/keys/` | Private keys (separate repo: `rcfiles-sshkeys`) |
 | `ssh-agent-mux.toml` | `~/.config/ssh-agent-mux/ssh-agent-mux.toml` | Mux daemon config |
 | `bin/ssh-add` | `~/bin/ssh-add` | ssh-add wrapper for mux compatibility |
