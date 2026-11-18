@@ -29,8 +29,8 @@ cd ~/github/mithro/rcfiles
 
 - **`bash/`** - Bash configuration with aliases and environment setup
   - `bash_aliases` - Main alias file
-  - `bash/include/` - Additional bash scripts sourced at startup
   - `bash/completion/` - Tab completion for `claude`, `claude-teleport`, `claude-resume` and `tmux` (see its README)
+  - `bash/include/` - Additional bash scripts sourced at startup
     - `commands-log` - Logs all bash commands with timestamps
     - `go` - Go language environment setup
     - `kicad-env.sh` - KiCad environment variables
