@@ -30,13 +30,14 @@ _claude_complete()
 
     local line files='' dirs='' hosts=''
     COMPREPLY=()
-    while read -r line; do
+    # Directives arrive with a leading TAB, which no candidate has.
+    while IFS= read -r line; do
         case $line in
-            @files) files=1 ;;
-            @dirs) dirs=1 ;;
-            @hosts) hosts=1 ;;
-            @nospace) compopt -o nospace ;;
-            @nosort) compopt -o nosort ;;
+            $'\t@files') files=1 ;;
+            $'\t@dirs') dirs=1 ;;
+            $'\t@hosts') hosts=1 ;;
+            $'\t@nospace') compopt -o nospace ;;
+            $'\t@nosort') compopt -o nosort ;;
             *) COMPREPLY+=("$line") ;;
         esac
     done < <(COLUMNS=${COLUMNS:-80} "$helper" "$cword" "${words[@]}")
@@ -60,6 +61,14 @@ _claude_complete()
         else
             mapfile -t -O "${#COMPREPLY[@]}" COMPREPLY < <(compgen -A hostname -- "$cur")
         fi
+    fi
+
+    # Likewise readline replaces only what follows the last ':' of the word, so
+    # drop that much from the front of every candidate (`foo:b` -> `bar.json`,
+    # not `foo:bar.json`, or the line would end up reading `foo:foo:bar.json`).
+    if [[ $cur == *:* && $COMP_WORDBREAKS == *:* ]]; then
+        local colon_prefix=${cur%"${cur##*:}"}
+        COMPREPLY=("${COMPREPLY[@]#"$colon_prefix"}")
     fi
 }
 

@@ -12,6 +12,11 @@ directive lines the shim acts on:
     @nospace              do not append a space after the completion
     @nosort               keep this order (e.g. sessions newest-first)
 
+Directive lines start with a TAB, which no candidate can, so a tmux session
+that happens to be called "@files" is still just a candidate. Candidates are
+printed shell-quoted (a backslash before each space etc.), since bash inserts
+them verbatim.
+
 Nothing about either CLI's option set is hard-coded here. The option and
 subcommand lists come from the installed binaries themselves, so a new release
 is completed correctly with no change to this file:
@@ -34,6 +39,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -99,9 +105,16 @@ class Reply:
         it must be the bare value. (Same trick as cobra's bash completion: the
         candidates differ before the description starts, so readline's
         common-prefix insertion never reaches the description.)"""
-        out = list(self.directives)
+        out = ["\t" + d for d in self.directives]
         generates_more = any(
             d in self.directives for d in ("@files", "@dirs", "@hosts")
+        )
+        # With @files/@dirs the shim turns on readline's filename quoting,
+        # which quotes every candidate itself; quoting here too would double it.
+        q = (
+            (lambda v: v)
+            if "@files" in self.directives or "@dirs" in self.directives
+            else quote
         )
         if (
             describe
@@ -109,14 +122,15 @@ class Reply:
             and not generates_more
             and any(d for _, d in self.items)
         ):
-            width = max(len(v) for v, _ in self.items)
+            width = max(len(q(v)) for v, _ in self.items)
             for v, d in self.items:
+                v = q(v)
                 line = f"{v.ljust(width)}  ({d})" if d else v
                 if len(line) > columns - 1:
                     line = line[: max(columns - 3, len(v) + 4)] + "…)"
                 out.append(line)
         else:
-            out.extend(v for v, _ in self.items)
+            out.extend(q(v) for v, _ in self.items)
         return out
 
 
@@ -125,8 +139,29 @@ class Reply:
 # --------------------------------------------------------------------------
 
 
-def run(argv, timeout=5):
-    """stdout of argv, or '' on any failure — a completer must never raise."""
+def quote(value):
+    """Backslash-escape what the shell would split or expand, as bash's own
+    completion does (`my session` -> `my\\ session`)."""
+    return re.sub(r"([^\w@%+=:,./~-])", r"\\\1", value)
+
+
+def dequote(word):
+    """The text a (possibly half-typed) shell word stands for: `my\\ ses` and
+    `"my ses` both mean `my ses`. Candidates are matched against this."""
+    for attempt in (word, word + '"', word + "'"):
+        try:
+            parts = shlex.split(attempt)
+        except ValueError:
+            continue
+        return parts[0] if len(parts) == 1 else word if parts else ""
+    return word
+
+
+def run(argv, timeout=2, must_succeed=False):
+    """stdout of argv, or '' on any failure — a completer must never raise.
+
+    The timeout is short on purpose: this is somebody's <TAB> key. The
+    binaries asked here answer in well under 200 ms when healthy."""
     try:
         p = subprocess.run(
             argv,
@@ -136,6 +171,8 @@ def run(argv, timeout=5):
             check=False,
         )
     except (OSError, subprocess.SubprocessError):
+        return ""
+    if must_succeed and p.returncode != 0:
         return ""
     return p.stdout.decode("utf-8", "replace")
 
@@ -214,7 +251,7 @@ def parse_choices(desc):
     desc = " ".join(desc.split())
     m = re.search(r"\(choices: ([^)]*)\)", desc)
     if m:
-        return re.findall(r'"([^"]*)"', m.group(1))
+        return list(dict.fromkeys(re.findall(r'"([^"]*)"', m.group(1))))
     for group in re.findall(r"\(([^()]+)\)", desc):
         items = [re.sub(r"\A(or|and) ", "", i.strip()) for i in group.split(",")]
         if len(items) >= 2 and all(_WORD.match(i) for i in items):
@@ -277,15 +314,18 @@ class ClaudeHelp:
     def text(self, chain):
         if not self.binary:
             return ""
-        path = self._dir and os.path.join(self._dir, "_".join(chain) or "_root")
+        # (a space cannot occur inside a subcommand name, so the join is unambiguous)
+        path = self._dir and os.path.join(self._dir, " ".join(chain) or "_root")
         if path:
             try:
                 with open(path, encoding="utf-8") as fh:
                     return fh.read()
             except OSError:
                 pass
-        text = run([self.binary, *chain, "--help"])
-        if text and path:
+        text = run([self.binary, *chain, "--help"], timeout=3, must_succeed=True)
+        if "Usage:" not in text:
+            return ""  # an error message, not a help page: never cache that
+        if path:
             try:
                 os.makedirs(self._dir, exist_ok=True)
                 tmp = f"{path}.{os.getpid()}"
@@ -693,7 +733,9 @@ def complete_teleport(words, cword, cobra=None):
     for w in words[1:cword]:
         if pending:
             pending = None
-        elif w.startswith("-") and w != "--":
+        elif w == "--":
+            pass
+        elif w.startswith("-"):
             if cobra.takes_value(context, w):
                 pending = w
         elif sub is None and not positionals and w in subcommands:
@@ -785,22 +827,35 @@ def main(argv):
         cword = int(argv[1])
     except ValueError:
         return 2
-    words = argv[2:]
+    words = [argv[2], *(dequote(w) for w in argv[3:])]
     cmd = os.path.basename(words[0])
+    try:
+        cwd = os.getcwd()
+    except OSError:  # the shell is sitting in a directory that was deleted
+        cwd = os.environ.get("PWD") or "/"
     if cmd == "claude-teleport":
         reply = complete_teleport(words, cword)
     elif cmd == "claude-resume":
         reply = complete_resume(words, cword)
     else:
-        reply = complete_claude(words, cword, os.getcwd())
+        reply = complete_claude(words, cword, cwd)
     try:
         columns = int(os.environ.get("COLUMNS") or 80)
     except ValueError:
         columns = 80
     describe = os.environ.get("CLAUDE_COMPLETE_DESCRIPTIONS", "1") != "0"
+    # A locale that cannot encode a title must cost a '?', not the completion.
+    sys.stdout.reconfigure(errors="replace")
     sys.stdout.write("".join(line + "\n" for line in reply.render(columns, describe)))
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    try:
+        sys.exit(main(sys.argv))
+    except Exception:
+        # Whatever went wrong, a traceback sprayed across somebody's prompt is
+        # worse than no completion. CLAUDE_COMPLETE_DEBUG=1 shows it.
+        if os.environ.get("CLAUDE_COMPLETE_DEBUG"):
+            raise
+        sys.exit(0)
