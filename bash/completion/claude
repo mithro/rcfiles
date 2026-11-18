@@ -1,0 +1,66 @@
+# bash completion for claude, claude-teleport and claude-resume  -*- shell-script -*-
+#
+# A thin shim: every decision is made by bin/claude-complete (Python), which
+# asks the installed binaries what they accept. This file only turns its
+# answer into COMPREPLY. See bash/completion/README.md.
+#
+# Loaded lazily by bash-completion from
+# ~/.local/share/bash-completion/completions/ (setup.sh: bash_completions);
+# claude-teleport and claude-resume are symlinks to this file.
+
+# The helper lives beside this file in the repo; this file is reached through
+# a symlink (two, for claude-teleport and claude-resume), hence the realpath.
+_claude_complete_helper=$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../bin/claude-complete
+
+_claude_complete()
+{
+    local helper=$_claude_complete_helper
+    [[ -x $helper ]] || helper=$(type -P claude-complete) || return 0
+
+    # Re-split the line with '=' and ':' kept inside words, so the helper sees
+    # `--effort=hi` and `plugin@market:x` whole (readline splits on both).
+    local cur words cword
+    if declare -F _comp_get_words >/dev/null; then # bash-completion >= 2.12
+        _comp_get_words -n '=:' cur words cword
+    elif declare -F _get_comp_words_by_ref >/dev/null; then
+        _get_comp_words_by_ref -n '=:' cur words cword
+    else
+        words=("${COMP_WORDS[@]}") cword=$COMP_CWORD cur=${COMP_WORDS[COMP_CWORD]}
+    fi
+
+    local line files='' dirs='' hosts=''
+    COMPREPLY=()
+    while read -r line; do
+        case $line in
+            @files) files=1 ;;
+            @dirs) dirs=1 ;;
+            @hosts) hosts=1 ;;
+            @nospace) compopt -o nospace ;;
+            @nosort) compopt -o nosort ;;
+            *) COMPREPLY+=("$line") ;;
+        esac
+    done < <(COLUMNS=${COLUMNS:-80} "$helper" "$cword" "${words[@]}")
+
+    # For `--opt=value` readline replaces only what follows the '='.
+    [[ $cur == -*=* ]] && cur=${cur#*=}
+
+    if [[ $files || $dirs ]]; then
+        compopt -o filenames
+        local kind=-f
+        [[ $dirs ]] && kind=-d
+        mapfile -t -O "${#COMPREPLY[@]}" COMPREPLY < <(compgen "$kind" -- "$cur")
+    fi
+    if [[ $hosts ]]; then
+        if declare -F _comp_compgen_known_hosts >/dev/null; then
+            _comp_compgen -a known_hosts -- "$cur"
+        elif declare -F _known_hosts_real >/dev/null; then
+            local saved=("${COMPREPLY[@]}")
+            _known_hosts_real -- "$cur"
+            COMPREPLY=("${saved[@]}" "${COMPREPLY[@]}")
+        else
+            mapfile -t -O "${#COMPREPLY[@]}" COMPREPLY < <(compgen -A hostname -- "$cur")
+        fi
+    fi
+}
+
+complete -F _claude_complete claude claude-teleport claude-resume
