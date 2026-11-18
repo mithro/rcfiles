@@ -1,0 +1,12 @@
+# Say so at shell start when the Claude session backup has gone stale.
+#
+# bin/claude-sessions-backup.py rewrites this file on every hourly run: empty
+# while backups are fresh, one line per problem once this machine (or, on
+# big-storage, any machine) has gone 48h without a full backup. The unit going
+# red in systemd was not enough: every machine failed hourly for seven weeks
+# in 2026 and nothing surfaced it.
+_csb_warning="${XDG_STATE_HOME:-$HOME/.local/state}/claude-sessions-backup/warning"
+if [[ $- == *i* && -s "$_csb_warning" ]]; then
+	printf '\033[1;31m%s\033[0m\n' "$(< "$_csb_warning")" >&2
+fi
+unset _csb_warning

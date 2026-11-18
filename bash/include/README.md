@@ -4,6 +4,10 @@ This directory contains bash scripts that are automatically sourced when bash st
 
 ## Files
 
+### `claude-sessions-backup`
+
+Prints a red warning at interactive shell start when the hourly Claude session backup (`bin/claude-sessions-backup.py`) has gone 48 hours without a full success on this machine, or, on big-storage, on any machine. It only reads `~/.local/state/claude-sessions-backup/warning`, which the backup rewrites every run; an empty or missing file prints nothing.
+
 ### `commands-log`
 
 Logs every bash command executed to `~/.shell_logs/${HOSTNAME}` with timestamps.
