@@ -460,7 +460,7 @@ printf '%s\n' "${COMPREPLY[@]}"
 """
 
 
-def bash_complete(file, *words, cwd=None, line=None):
+def bash_complete(file, *words, cwd=None, line=None, env_extra=None):
     """Run the real completion function for `words` in a real bash; the last
     word is the one being completed. COMP_WORDS is given pre-split the way
     readline would split it; pass `line` when that differs from joining the
@@ -472,6 +472,7 @@ def bash_complete(file, *words, cwd=None, line=None):
         FILE=file,
         COLUMNS="200",
         LINE=line or " ".join(words),
+        **(env_extra or {}),
     )
     p = subprocess.run(
         ["bash", "--norc", "--noprofile", "-c", BASH_DRIVER, "bash", *words],
@@ -550,156 +551,235 @@ def test_bash():
         else:
             skip("bash teleport", "claude-teleport not installed")
 
-        got = bash_complete("claude-resume", "claude-resume", "zzzz-no-such")
-        check("bash claude-resume: loads via its symlink", got == [], got)
+        # claude-resume through its symlink, against a throwaway config dir so
+        # that a session really is offered (an empty answer would also be what
+        # a shim that never found its helper returns).
+        sid = "cccccccc-0000-4000-8000-000000000003"
+        os.makedirs(os.path.join(tmp, "cfg", "projects", "-p"))
+        open(os.path.join(tmp, "cfg", "projects", "-p", sid + ".jsonl"), "w").close()
+        cfg = {"CLAUDE_CONFIG_DIR": os.path.join(tmp, "cfg")}
+        got = bash_complete("claude-resume", "claude-resume", "cccc", env_extra=cfg)
+        check("bash claude-resume: loads via its symlink", got == [sid], got)
 
-    # Upstream's tmux completion needs the bash-completion >= 2.12 API.
-    with open(BASH_COMPLETION, encoding="utf-8") as fh:
-        modern = "_comp_initialize" in fh.read()
-    if not modern:
-        skip("bash tmux", "bash-completion older than 2.12")
-    elif (
-        shutil.which("tmux")
-        and subprocess.run(
-            ["tmux", "list-commands"], capture_output=True, check=False
-        ).returncode
-        == 0
-    ):
-        cmds = subprocess.run(
-            ["tmux", "list-commands", "-F", "#{command_list_name}"],
-            capture_output=True,
-            text=True,
-            check=False,
-        ).stdout.split()
-        got = bash_complete("tmux", "tmux", "")
-        check(
-            f"bash tmux: all {len(cmds)} commands offered",
-            set(cmds) <= set(got),
-            sorted(set(cmds) - set(got))[:10],
-        )
-        got = bash_complete("tmux", "tmux", "-")
-        check("bash tmux: global options", {"-L", "-S", "-f", "-V"} <= set(got), got)
-        got = bash_complete("tmux", "tmux", "new-session", "-")
-        usage = subprocess.run(
-            ["tmux", "list-commands", "new-session"],
-            capture_output=True,
-            text=True,
-            check=False,
-        ).stdout
-        want = {"-" + c for grp in re.findall(r"\[-(\w+)\]", usage) for c in grp} | set(
-            re.findall(r"\[(-\w) ", usage)
-        )
-        check(
-            f"bash tmux: all {len(want)} new-session options",
-            want <= set(got),
-            sorted(want - set(got)),
-        )
-        got = bash_complete("tmux", "tmux", "neww", "-")
-        usage = subprocess.run(
-            ["tmux", "list-commands", "new-window"],
-            capture_output=True,
-            text=True,
-            check=False,
-        ).stdout
-        want = {"-" + c for grp in re.findall(r"\[-(\w+)\]", usage) for c in grp} | set(
-            re.findall(r"\[(-\w) ", usage)
-        )
-        check(
-            "bash tmux: options after a command alias (neww)",
-            want and want <= set(got),
-            sorted(want - set(got)),
-        )
-
-        # Values upstream leaves as a TODO, filled in by bash/completion/tmux.
-        def tmux(*args):
-            return subprocess.run(
-                ["tmux", *args], capture_output=True, text=True, check=False
-            ).stdout.split("\n")[:-1]
-
-        sess = tmux("list-sessions", "-F", "#{session_name}")
-        plain = [x for x in sess if re.fullmatch(r"[\w-]+", x)]
-        got = bash_complete("tmux", "tmux", "attach", "-t", "")
-        check("bash tmux: target-session", set(sess) <= set(got), got[:5])
-        if plain:
-            name = plain[0]
-            wins = tmux("list-windows", "-t", "=" + name, "-F", "#{window_index}")
+        # A ':' in the word: readline replaces only what follows it.
+        open(os.path.join(tmp, "foo:bar.json"), "w").close()
+        if shutil.which("claude"):
             got = bash_complete(
-                "tmux",
-                "tmux",
-                "select-window",
-                "-t",
-                name[:-1] if len(name) > 1 else name,
+                "claude", "claude", "--settings", "foo", ":", "b",
+                cwd=tmp, line="claude --settings foo:b",
+            )  # fmt: skip
+            check(
+                "bash claude: colon in a filename is not duplicated",
+                got == ["bar.json"],
+                got,
             )
+
+        # The helper must stay silent whatever happens: here, a deleted cwd.
+        gone = os.path.join(tmp, "gone")
+        os.mkdir(gone)
+        p = subprocess.run(
+            ["bash", "-c", 'rmdir "$PWD" && exec "$0" 1 claude ""', os.path.join(HERE, "claude-complete")],
+            capture_output=True, text=True, cwd=gone, check=False,
+        )  # fmt: skip
+        check(
+            "helper: silent in a deleted directory",
+            p.returncode == 0 and not p.stderr,
+            p.stderr[-300:],
+        )
+
+
+def test_engine_robustness():
+    check(
+        "quote: spaces and metacharacters",
+        cc.quote("my $(x);s") == r"my\ \$\(x\)\;s",
+        cc.quote("my $(x);s"),
+    )
+    check(
+        "quote: ordinary values untouched",
+        cc.quote("a-b_c:1.2@x/y=z") == "a-b_c:1.2@x/y=z",
+    )
+    check(
+        "dequote: backslash and open quote",
+        [cc.dequote(w) for w in (r"my\ se", '"my se', "plain", "")]
+        == ["my se", "my se", "plain", ""],
+    )
+    r = cc.Reply("")
+    r.add(["my session", "@files"])
+    r.directive("@nosort")
+    check(
+        "render: directives are out of band, values quoted",
+        r.render() == ["\t@nosort", r"my\ session", "@files"],
+        r.render(),
+    )
+    r = cc.Reply("")
+    r.add(["a b"])
+    r.directive("@files")
+    check(
+        "render: no double quoting alongside filenames",
+        r.render() == ["\t@files", "a b"],
+        r.render(),
+    )
+
+    # An error message from the binary is not a help page and is never cached.
+    old = cc.CACHE_DIR
+    with tempfile.TemporaryDirectory(dir=REPO) as tmp:
+        cc.CACHE_DIR = os.path.join(tmp, "cache")
+        try:
+            fake = os.path.join(tmp, "claude")
+            with open(fake, "w", encoding="utf-8") as fh:
+                fh.write("#!/bin/sh\necho 'error: not logged in'\nexit 1\n")
+            os.chmod(fake, 0o755)
+            hlp = cc.ClaudeHelp(fake)
+            check("cache: a failing binary yields nothing", hlp.get(()) == ([], []))
+            check("cache: and nothing is written", not os.path.exists(cc.CACHE_DIR))
+            with open(fake, "w", encoding="utf-8") as fh:
+                fh.write(
+                    "#!/bin/sh\nprintf 'Usage: claude\\n\\nOptions:\\n  --x  an option\\n'\n"
+                )
+            hlp = cc.ClaudeHelp(fake)
+            check(
+                "cache: a real help page is parsed",
+                [o.names for o in hlp.get(())[0]] == [["--x"]],
+            )
+            check("cache: and written", os.path.isfile(os.path.join(hlp._dir, "_root")))
+        finally:
+            cc.CACHE_DIR = old
+
+
+def test_bash_tmux():
+    """tmux completion against a private, throwaway tmux server.
+
+    TMUX_TMPDIR moves the default socket into a temp dir, so this never sees
+    (or touches) anybody's real sessions and behaves the same in CI."""
+    if not os.path.exists(BASH_COMPLETION):
+        return skip("bash tmux", "bash-completion not installed")
+    with open(BASH_COMPLETION, encoding="utf-8") as fh:
+        if "_comp_initialize" not in fh.read():
+            return skip("bash tmux", "bash-completion older than 2.12")
+    if not shutil.which("tmux"):
+        return skip("bash tmux", "tmux not installed")
+
+    with tempfile.TemporaryDirectory(dir=REPO) as tmp:
+        env = {k: v for k, v in os.environ.items() if k != "TMUX"}
+        env["TMUX_TMPDIR"] = tmp
+        extra = {"TMUX_TMPDIR": tmp, "TMUX": ""}
+
+        def tmux(*args):
+            p = subprocess.run(
+                ["tmux", *args], capture_output=True, text=True, env=env, check=False
+            )
+            return p.returncode, p.stdout.split("\n")[:-1]
+
+        def comp(*words, **kw):
+            return bash_complete("tmux", "tmux", *words, env_extra=extra, **kw)
+
+        rc, _ = tmux("new-session", "-d", "-s", "plain", "-x", "80", "-y", "24")
+        if rc != 0:
+            return skip("bash tmux", "cannot start a tmux server here")
+        try:
+            tmux("new-window", "-t", "plain")
+            tmux("new-session", "-d", "-s", "my session", "-x", "80", "-y", "24")
+
+            _, cmds = tmux("list-commands", "-F", "#{command_list_name}")
+            got = comp("")
+            check(
+                f"bash tmux: all {len(cmds)} commands offered",
+                cmds and set(cmds) <= set(got),
+                sorted(set(cmds) - set(got))[:10],
+            )
+            got = comp("-")
+            check(
+                "bash tmux: global options", {"-L", "-S", "-f", "-V"} <= set(got), got
+            )
+            for name, typed in (("new-session", "new-session"), ("new-window", "neww")):
+                _, usage = tmux("list-commands", name)
+                usage = " ".join(usage)
+                want = {
+                    "-" + c for grp in re.findall(r"\[-(\w+)\]", usage) for c in grp
+                }
+                want |= set(re.findall(r"\[(-\w) ", usage))
+                got = comp(typed, "-")
+                check(
+                    f"bash tmux: all {len(want)} options of {typed}",
+                    want and want <= set(got),
+                    sorted(want - set(got)),
+                )
+
+            # Values upstream leaves as a TODO, filled in by bash/completion/tmux.
+            got = comp("attach", "-t", "pl")
+            check("bash tmux: target-session", got == ["plain"], got)
+            got = comp("select-window", "-t", "pl")
             check(
                 "bash tmux: target-window offers session:window",
-                f"{name}:{wins[0]}" in got,
-                got[:5],
+                got == ["plain:0", "plain:1"],
+                got,
             )
-            # readline splits `-t name:` at the colon; only the part after it is replaced
-            got = bash_complete(
-                "tmux",
-                "tmux",
+            # readline splits `-t plain:` at the colon; only what follows is replaced
+            got = comp(
                 "select-window",
                 "-t",
-                name,
+                "plain",
                 ":",
                 "",
-                line=f"tmux select-window -t {name}:",
+                line="tmux select-window -t plain:",
             )
-            check(
-                "bash tmux: target-window after the colon",
-                got == wins,
-                (got[:5], wins[:5]),
-            )
-            got = bash_complete(
-                "tmux",
-                "tmux",
+            check("bash tmux: target-window after the colon", got == ["0", "1"], got)
+            got = comp(
                 "select-pane",
                 "-t",
-                name,
+                "plain",
                 ":",
-                wins[0] + ".",
-                line=f"tmux select-pane -t {name}:{wins[0]}.",
+                "1.",
+                line="tmux select-pane -t plain:1.",
             )
-            check(
-                "bash tmux: target-pane",
-                got and all(g.startswith(wins[0] + ".") for g in got),
-                got[:5],
-            )
-            got = bash_complete(
-                "tmux",
-                "tmux",
+            check("bash tmux: target-pane", got == ["1.0"], got)
+            got = comp(
                 "kill-window",
                 "-t",
-                name,
+                "plain",
                 ":",
-                wins[0],
+                "1",
                 "-",
-                line=f"tmux kill-window -t {name}:{wins[0]} -",
+                line="tmux kill-window -t plain:1 -",
             )
             check(
                 "bash tmux: options still parse after a colon target", "-a" in got, got
             )
-        got = bash_complete("tmux", "tmux", "set-option", "-g", "status-")
-        check(
-            "bash tmux: option names",
-            {"status-left", "status-right"} <= set(got),
-            got[:5],
-        )
-        got = bash_complete("tmux", "tmux", "select-layout", "")
-        check(
-            "bash tmux: layout names", "tiled" in got and "even-horizontal" in got, got
-        )
-        got = bash_complete("tmux", "tmux", "bind-key", "-T", "")
-        check("bash tmux: key tables", {"root", "prefix"} <= set(got), got)
-        got = bash_complete("tmux", "tmux", "source-file", "Makef", cwd=REPO)
-        check(
-            "bash tmux: upstream's own values still work (file)",
-            got == ["Makefile"],
-            got,
-        )
-    else:
-        skip("bash tmux", "no tmux server to ask")
+            got = comp("select-window", "-t", "my")
+            check(
+                "bash tmux: a name with a space is offered escaped",
+                got == [r"my\ session:0"],
+                got,
+            )
+            # (an escaped space is not a word break: readline hands over one word)
+            got = comp("select-window", "-t", "my\\ session")
+            check(
+                "bash tmux: and still completes once escaped",
+                got == [r"my\ session:0"],
+                got,
+            )
+            got = comp("set-option", "-g", "status-")
+            check(
+                "bash tmux: option names",
+                {"status-left", "status-right"} <= set(got),
+                got[:5],
+            )
+            got = comp("select-layout", "")
+            check(
+                "bash tmux: layout names",
+                "tiled" in got and "even-horizontal" in got,
+                got,
+            )
+            got = comp("bind-key", "-T", "")
+            check("bash tmux: key tables", {"root", "prefix"} <= set(got), got)
+            got = comp("source-file", "Makef", cwd=REPO)
+            check(
+                "bash tmux: upstream's own values still work (file)",
+                got == ["Makefile"],
+                got,
+            )
+        finally:
+            tmux("kill-server")
 
 
 if __name__ == "__main__":
@@ -707,7 +787,9 @@ if __name__ == "__main__":
     test_sessions()
     test_live_claude()
     test_live_teleport()
+    test_engine_robustness()
     test_bash()
+    test_bash_tmux()
     print(
         f"\n{RESULTS['pass']} passed, {RESULTS['fail']} failed, {RESULTS['skip']} skipped"
     )
