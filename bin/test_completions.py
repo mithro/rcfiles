@@ -553,7 +553,12 @@ def test_bash():
         got = bash_complete("claude-resume", "claude-resume", "zzzz-no-such")
         check("bash claude-resume: loads via its symlink", got == [], got)
 
-    if (
+    # Upstream's tmux completion needs the bash-completion >= 2.12 API.
+    with open(BASH_COMPLETION, encoding="utf-8") as fh:
+        modern = "_comp_initialize" in fh.read()
+    if not modern:
+        skip("bash tmux", "bash-completion older than 2.12")
+    elif (
         shutil.which("tmux")
         and subprocess.run(
             ["tmux", "list-commands"], capture_output=True, check=False
