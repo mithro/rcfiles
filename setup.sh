@@ -596,6 +596,25 @@ function claude {
 	if [ $SERVER -ne 1 ] && [ -x "$NOTIFY_DIR/install_service.sh" ]; then
 		( cd "$NOTIFY_DIR" && ./install_service.sh ) || echo "Warning: claude-notify-gnome focus service not installed"
 	fi
+
+	# Machine-wide managed settings (cleanupPeriodDays), which every claude
+	# process loads, including Agent SDK ones run without user settings. Why:
+	# dot-claude/etc-claude-code/README.md. Never clobber a file that differs.
+	MANAGED_SRC="$DOT_CLAUDE_DIR/etc-claude-code/managed-settings.json"
+	MANAGED_DST=/etc/claude-code/managed-settings.json
+	if [ -f "$MANAGED_SRC" ]; then
+		if [ ! -e "$MANAGED_DST" ]; then
+			echo "Installing $MANAGED_DST"
+			sudo install -D -m 0644 "$MANAGED_SRC" "$MANAGED_DST"
+		elif ! cmp -s "$MANAGED_SRC" "$MANAGED_DST"; then
+			echo "Warning: $MANAGED_DST differs from $MANAGED_SRC; not overwriting:" >&2
+			diff -u "$MANAGED_DST" "$MANAGED_SRC" >&2 || true
+		fi
+	fi
+
+	# Plugins never update themselves; a stale one is how transcripts were
+	# lost in 2026. Refresh all marketplaces and update every user plugin.
+	"$RCFILES/bin/claude-plugins-update.py" || echo "Warning: some Claude plugins did not update"
 }
 
 function claude_teleport {
