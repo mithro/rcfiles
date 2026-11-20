@@ -11,6 +11,10 @@ Include ~/.ssh/config_extra
 
 # Default Options
 Host *
+	# Store known_hosts entries in plain text: Debian/Ubuntu ship
+	# "HashKnownHosts yes" in /etc/ssh/ssh_config, which makes entries
+	# unreadable. First value wins, so this overrides the system default.
+	HashKnownHosts no
 	CanonicalizeHostname no
 	# Check for sshfp keys in DNS
 	VerifyHostKeyDNS yes
