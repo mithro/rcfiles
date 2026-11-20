@@ -6,10 +6,20 @@ Copies, without ever deleting on the destination:
   ~/.claude/history.jsonl                   prompt history
   ~/.claude/todos/                          per-session todo state
   ~/.config/superpowers/conversation-archive/   episodic-memory plugin archive
+  ~/.config/Claude/                         Claude Desktop state (see below)
 
 Destination: /backups/machines/<this-machine>/claude-sessions/ on
 big-storage.welland.mithis.com, holding projects/, history.jsonl, todos/,
-conversation-archive/ and .last-backup directly. On big-storage itself this is
+conversation-archive/, claude-desktop/ and .last-backup directly.
+
+Claude Desktop: the transcripts of its Code sessions are ordinary Claude Code
+sessions and already land in ~/.claude/projects. ~/.config/Claude holds what
+the app adds on top: the session index (claude-code-sessions/: titles, cwd,
+cliSessionId, starred/archived), Cowork state (local-agent-mode-sessions/),
+scratch workspaces, git-shadow refs, claude_desktop_config.json (MCP servers,
+preferences) and logs. DESKTOP_EXCLUDES leaves out caches, the bundled Claude
+Code binaries (~350 MB per version) and the Chromium login/browser state
+(Cookies, config.json's oauth:tokenCache, Local Storage, IndexedDB, ...). On big-storage itself this is
 a local copy; everywhere else it is rsync over ssh using the dedicated key
 ~/.ssh/keys/claude-sessions-backup, which big-storage's authorized_keys pins
 with rrsync to that one directory (so a leaked key can only touch its own
@@ -56,13 +66,56 @@ LABELS = {
     "tim-yoga": "tim-yoga.welland.mithis.com",
 }
 
-# (source, name under claude-sessions/). Whether a source is a directory or a
-# file is decided when it is looked at; see plan_jobs() for how each is sent.
+# Top-level entries of ~/.config/Claude not worth (or not safe) to back up.
+# An exclude list rather than an include list so that new state the app starts
+# keeping is picked up without anyone noticing it is missing.
+DESKTOP_EXCLUDES = [
+    # Regenerable caches and crash/telemetry spool.
+    "/Cache",
+    "/Code Cache",
+    "/GPUCache",
+    "/GPUPersistentCache",
+    "/DawnGraphiteCache",
+    "/DawnWebGPUCache",
+    "/Shared Dictionary",
+    "/Dictionaries",
+    "/Crashpad",
+    "/sentry",
+    "/fcache",
+    "/blob_storage",
+    "/ca-bundle.pem",
+    "/DIPS*",
+    "/declarative_performance_observer.db*",
+    "/Singleton*",
+    # Bundled Claude Code CLI binaries, re-downloaded by the app.
+    "/claude-code",
+    # Login and browser session state: credentials, not history.
+    "/config.json",
+    "/Cookies*",
+    "/Local State",
+    "/Local Storage",
+    "/Session Storage",
+    "/IndexedDB",
+    "/WebStorage",
+    "/Partitions",
+    "/Network Persistent State",
+    "/TransportSecurity",
+    "/Trust Tokens*",
+]
+
+# (source, name under claude-sessions/, extra rsync filter options). Whether a
+# source is a directory or a file is decided when it is looked at; see
+# plan_jobs() for how each is sent.
 SOURCES = [
-    ("~/.claude/projects", "projects"),
-    ("~/.claude/history.jsonl", "history.jsonl"),
-    ("~/.claude/todos", "todos"),
-    ("~/.config/superpowers/conversation-archive", "conversation-archive"),
+    ("~/.claude/projects", "projects", []),
+    ("~/.claude/history.jsonl", "history.jsonl", []),
+    ("~/.claude/todos", "todos", []),
+    ("~/.config/superpowers/conversation-archive", "conversation-archive", []),
+    (
+        "~/.config/Claude",
+        "claude-desktop",
+        [f"--exclude={p}" for p in DESKTOP_EXCLUDES],
+    ),
 ]
 
 RSYNC_OPTS = [
@@ -128,13 +181,13 @@ def plan_jobs(sources, dest_prefix: str):
     and rrsync refuses the -L/-k options that would follow it.
     """
     jobs = []
-    for src, name in sources:
+    for src, name, filters in sources:
         path = os.path.expanduser(src)
         if not os.path.exists(path):
             jobs.append((src, None, None, None))
             continue
         if not os.path.isdir(path):
-            jobs.append((src, [], path, f"{dest_prefix}./"))
+            jobs.append((src, list(filters), path, f"{dest_prefix}./"))
             continue
         real = os.path.realpath(path)
         linked = sorted(
@@ -143,7 +196,14 @@ def plan_jobs(sources, dest_prefix: str):
             if e.is_symlink() and e.is_dir(follow_symlinks=True)
         )
         excludes = [f"--exclude=/{rsync_escape(n)}" for n in linked]
-        jobs.append((f"{src}/", excludes, f"{real}/", f"{dest_prefix}{name}/"))
+        jobs.append(
+            (
+                f"{src}/",
+                [*filters, *excludes],
+                f"{real}/",
+                f"{dest_prefix}{name}/",
+            )
+        )
         for n in linked:
             target = os.path.realpath(os.path.join(real, n))
             jobs.append(

@@ -1,8 +1,9 @@
 [Unit]
 Description=Back up Claude Code session storage to big-storage
 Documentation=file:%h/rcfiles/bin/claude-sessions-backup.py
-# Hourly mirror (never deleting) of ~/.claude/projects, history.jsonl, todos and
-# the episodic-memory conversation archive to
+# Hourly mirror (never deleting) of ~/.claude/projects, history.jsonl, todos,
+# the episodic-memory conversation archive and Claude Desktop's ~/.config/Claude
+# (minus caches and login state) to
 # big-storage:/backups/machines/<machine>/claude-sessions/. Exists because Claude
 # Code's cleanupPeriodDays sweep silently deleted months of transcripts on
 # 2026-09-12; the backup is the copy the sweep cannot reach.

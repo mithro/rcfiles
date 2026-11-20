@@ -55,10 +55,27 @@ def make_tree(root: pathlib.Path):
     (projects / "-home-linked").symlink_to(other)
     (projects / "odd[name]").mkdir()
     (root / "claude" / "history.jsonl").write_text("history\n")
+    # A Claude Desktop config dir with state worth keeping and state that is
+    # cache or credentials (names as found in ~/.config/Claude).
+    desktop = root / "desktop"
+    for d in ("claude-code-sessions/acct/org", "Code Cache/js", "claude-code/2.1.325"):
+        (desktop / d).mkdir(parents=True)
+    (desktop / "claude-code-sessions/acct/org/local_1.json").write_text("{}\n")
+    (desktop / "claude_desktop_config.json").write_text("{}\n")
+    (desktop / "Code Cache/js/x").write_text("cache\n")
+    (desktop / "claude-code/2.1.325/claude").write_text("binary\n")
+    (desktop / "config.json").write_text('{"oauth:tokenCache": "secret"}\n')
+    (desktop / "Cookies").write_text("cookies\n")
+    (desktop / "Cookies-journal").write_text("")
     return [
-        (str(projects), "projects"),
-        (str(root / "claude" / "history.jsonl"), "history.jsonl"),
-        (str(root / "claude" / "todos"), "todos"),
+        (str(projects), "projects", []),
+        (str(root / "claude" / "history.jsonl"), "history.jsonl", []),
+        (str(root / "claude" / "todos"), "todos", []),
+        (
+            str(desktop),
+            "claude-desktop",
+            [f"--exclude={p}" for p in csb.DESKTOP_EXCLUDES],
+        ),
     ]
 
 
@@ -154,6 +171,37 @@ def test_real_rsync_layout():
             "file lands at the top level",
             (dest / "history.jsonl").read_text() == "history\n" * 2,
         )
+        desk = dest / "claude-desktop"
+        case(
+            "desktop session index copied",
+            (desk / "claude-code-sessions/acct/org/local_1.json").exists(),
+        )
+        case(
+            "desktop config copied",
+            (desk / "claude_desktop_config.json").exists(),
+        )
+        left_out = [
+            n
+            for n in (
+                "Code Cache",
+                "claude-code",
+                "config.json",
+                "Cookies",
+                "Cookies-journal",
+            )
+            if (desk / n).exists()
+        ]
+        case(
+            "desktop caches, binaries and credentials left out", not left_out, left_out
+        )
+
+    case(
+        "the real SOURCES include Claude Desktop with its excludes",
+        any(
+            name == "claude-desktop" and "--exclude=/config.json" in filters
+            for _src, name, filters in csb.SOURCES
+        ),
+    )
 
 
 def test_stale_machines():
