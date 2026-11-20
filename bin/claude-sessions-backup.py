@@ -38,6 +38,7 @@ failed hourly and only the journal knew.)
 """
 
 import datetime
+import fnmatch
 import os
 import pathlib
 import shutil
@@ -101,6 +102,16 @@ DESKTOP_EXCLUDES = [
     "/Network Persistent State",
     "/TransportSecurity",
     "/Trust Tokens*",
+    # Token store of Desktop's SSH-remote feature (empty until it is used).
+    "/ssh-remote-server-state.json",
+    # Standard Chromium credential/session stores this app version does not
+    # create yet; listed so a future Electron upgrade cannot start sending them.
+    "/Network",
+    "/Login Data*",
+    "/Web Data*",
+    "/Service Worker",
+    "/SharedStorage*",
+    "/Sessions",
 ]
 
 # (source, name under claude-sessions/, extra rsync filter options). Whether a
@@ -178,7 +189,10 @@ def plan_jobs(sources, dest_prefix: str):
     (desktop keeps some projects in a second config dir and links them into
     ~/.claude/projects) is excluded from the main transfer and sent from its
     resolved path instead. `rsync -a` would copy the link, not the sessions,
-    and rrsync refuses the -L/-k options that would follow it.
+    and rrsync refuses the -L/-k options that would follow it. A linked entry
+    that the source's own top-level `--exclude=/pattern` filters match is not
+    followed: its separate job carries no filters, so following it would send
+    exactly what was excluded (e.g. a Cache or Local Storage linked elsewhere).
     """
     jobs = []
     for src, name, filters in sources:
@@ -190,10 +204,15 @@ def plan_jobs(sources, dest_prefix: str):
             jobs.append((src, list(filters), path, f"{dest_prefix}./"))
             continue
         real = os.path.realpath(path)
+        top_excludes = [
+            f[len("--exclude=/") :] for f in filters if f.startswith("--exclude=/")
+        ]
         linked = sorted(
             e.name
             for e in os.scandir(real)
-            if e.is_symlink() and e.is_dir(follow_symlinks=True)
+            if e.is_symlink()
+            and e.is_dir(follow_symlinks=True)
+            and not any(fnmatch.fnmatchcase(e.name, p) for p in top_excludes)
         )
         excludes = [f"--exclude=/{rsync_escape(n)}" for n in linked]
         jobs.append(

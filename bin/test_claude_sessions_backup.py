@@ -67,15 +67,24 @@ def make_tree(root: pathlib.Path):
     (desktop / "config.json").write_text('{"oauth:tokenCache": "secret"}\n')
     (desktop / "Cookies").write_text("cookies\n")
     (desktop / "Cookies-journal").write_text("")
+    # Excluded names deeper down must be kept: the excludes are top-level only.
+    (desktop / "scratch-workspaces/Cache").mkdir(parents=True)
+    (desktop / "scratch-workspaces/Cache/keep").write_text("user file\n")
+    (desktop / "scratch-workspaces/config.json").write_text("{}\n")
+    # An excluded entry that is a symlink to a directory elsewhere must not be
+    # followed by plan_jobs' separate linked-directory job.
+    elsewhere = root / "elsewhere-local-storage"
+    elsewhere.mkdir()
+    (elsewhere / "leveldb").write_text("session token\n")
+    (desktop / "Local Storage").symlink_to(elsewhere)
+    # Take the desktop filters from the real SOURCES so a broken wiring there
+    # is caught; only the path is swapped for the test tree.
+    filters = next(f for _s, n, f in csb.SOURCES if n == "claude-desktop")
     return [
         (str(projects), "projects", []),
         (str(root / "claude" / "history.jsonl"), "history.jsonl", []),
         (str(root / "claude" / "todos"), "todos", []),
-        (
-            str(desktop),
-            "claude-desktop",
-            [f"--exclude={p}" for p in csb.DESKTOP_EXCLUDES],
-        ),
+        (str(desktop), "claude-desktop", filters),
     ]
 
 
@@ -107,6 +116,11 @@ def test_plan_shapes():
         case(
             "a file is sent into the directory, never to a name",
             by_dest["tim@host:./"][2].endswith("/history.jsonl"),
+        )
+        case(
+            "an excluded symlinked directory gets no separate job",
+            not any("Local Storage" in d for d in by_dest),
+            list(by_dest),
         )
         case(
             "a missing source is reported, not transferred",
@@ -188,11 +202,17 @@ def test_real_rsync_layout():
                 "config.json",
                 "Cookies",
                 "Cookies-journal",
+                "Local Storage",
             )
-            if (desk / n).exists()
+            if (desk / n).exists() or (desk / n).is_symlink()
         ]
         case(
             "desktop caches, binaries and credentials left out", not left_out, left_out
+        )
+        case(
+            "excluded names below the top level are kept",
+            (desk / "scratch-workspaces/Cache/keep").exists()
+            and (desk / "scratch-workspaces/config.json").exists(),
         )
 
     case(
