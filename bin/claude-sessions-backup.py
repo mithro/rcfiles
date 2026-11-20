@@ -53,6 +53,7 @@ LABELS = {
     "x1c-work": "x1c-work.welland.mithis.com",
     "desktop": "desktop.buddy.mithis.com",
     "big-storage": "big-storage.welland.mithis.com",
+    "tim-yoga": "tim-yoga.welland.mithis.com",
 }
 
 # (source, name under claude-sessions/). Whether a source is a directory or a
