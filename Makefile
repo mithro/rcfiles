@@ -25,6 +25,9 @@ YAMLLINT := $(VENV)/bin/yamllint
 SHELLCHECK := $(VENV)/bin/shellcheck
 PYTHON := $(VENV)/bin/python
 
+# Python programs with no .py suffix, which the bin/*.py glob below misses.
+PY_SCRIPTS := bin/claude-complete
+
 # Default target - show help
 help:
 	@echo "Available targets:"
@@ -116,13 +119,13 @@ shellcheck: | $(VENV_STAMP)
 # Python linting with ruff
 python-lint: | $(VENV_STAMP)
 	@echo "Running ruff linter..."
-	@$(RUFF) check python/ bin/*.py backup/*.py --exclude vim/ --exclude gdb/
+	@$(RUFF) check python/ bin/*.py $(PY_SCRIPTS) backup/*.py --exclude vim/ --exclude gdb/
 	@echo "✓ Python linting passed"
 
 # Python formatting check with ruff
 python-format: | $(VENV_STAMP)
 	@echo "Checking Python formatting..."
-	@$(RUFF) format --check python/ bin/*.py backup/*.py --exclude vim/ --exclude gdb/
+	@$(RUFF) format --check python/ bin/*.py $(PY_SCRIPTS) backup/*.py --exclude vim/ --exclude gdb/
 	@echo "✓ Python formatting check passed"
 
 # Auto-format Python files with ruff

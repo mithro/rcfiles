@@ -18,7 +18,7 @@ import urllib.request
 from pathlib import Path
 
 URL = "https://raw.githubusercontent.com/scop/bash-completion/main/completions-core/tmux.bash"
-DEST = Path(__file__).resolve().parent / "tmux"
+DEST = Path(__file__).resolve().parent / "upstream" / "tmux"
 
 
 def main() -> int:

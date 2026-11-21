@@ -54,6 +54,7 @@ The `linkit()` function in `setup.sh` implements a hostname-aware configuration 
 ### Directory Structure
 
 - `bash/`: Bash configuration with main `bash_aliases` file and additional scripts in `bash/include/`
+- `bash/completion/`: Tab completion for `claude`, `claude-teleport`, `claude-resume` and `tmux`, lazy-loaded via `~/.local/share/bash-completion/completions/`. Option lists are never hand-written: `bin/claude-complete` asks the installed binaries. See `bash/completion/README.md`; test with `bin/test_completions.py`
 - `git/`: Git configuration (`gitconfig`, `gitignore`)
 - `vim/`: Vim configuration with Pathogen plugin manager and multiple plugins as git submodules in `vim/bundle/`
 - `tmux/`: Tmux configuration with hostname-specific overrides; TPM vendored at `tmux/plugins/tpm` (plugins clone to `~/.tmux/plugins/`); plugin block in `tmux/tmux.conf-postfix` (appended by linkit after host parts)

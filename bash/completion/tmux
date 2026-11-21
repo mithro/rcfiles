@@ -1,357 +1,127 @@
-# tmux(1) completion                                       -*- shell-script -*-
-# SPDX-License-Identifier: GPL-2.0-or-later OR ISC
-
-# Log a message to help with debugging.
-# If BASH_COMPLETION_DEBUG is set, it will be printed to stderr.
-# When running with `set -x`, the _comp_cmd_tmux__log call itself will be
-# printed.
+# tmux(1) completion, local additions                      -*- shell-script -*-
 #
-# @param $1 Message to log
-_comp_cmd_tmux__log()
-{
-    if [[ ${BASH_COMPLETION_DEBUG-} ]]; then
-        printf 'tmux bash completion: %s\n' "$1" >&2
+# The real work is done by bash-completion's own tmux completion, which asks
+# the running tmux for its commands and flags (so it is always current). It is
+# loaded from the system if bash-completion ships it (>= 2.17), otherwise from
+# the vendored copy in upstream/tmux (refreshed by ./update-tmux).
+#
+# Upstream completes every command and flag but only a few argument *values*
+# (its _comp_cmd_tmux__value carries a "TODO: Complete more option types").
+# This file fills those in — windows, panes, clients, buffers, key tables,
+# option and hook names, layouts, sockets — by wrapping that one function, so
+# the vendored file stays byte-identical to upstream.
+
+# (This file is reached through a symlink, hence the realpath.)
+for _rc_tmux_f in /usr/share/bash-completion/completions/tmux \
+    "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/upstream/tmux"; do
+    if [[ -r $_rc_tmux_f ]]; then
+        # shellcheck source=/dev/null
+        source "$_rc_tmux_f"
+        break
     fi
-}
+done
+unset _rc_tmux_f
 
-# Run the tmux command being completed.
+# Upstream needs the bash-completion >= 2.12 API. Test for that API, not for
+# upstream's functions: the vendored file defines those on any version, and
+# would then print "command not found" on every <TAB>.
+declare -F _comp_initialize >/dev/null &&
+    declare -F _comp_cmd_tmux__value >/dev/null || return 0
+
+# Offer the lines printed by `tmux "$@"` that match the word being completed.
 #
-# @param $@ args to tmux
-_comp_cmd_tmux__run()
+# Names are user-chosen (`my session`) and bash inserts a candidate verbatim,
+# so each is offered shell-escaped. The matching is done here rather than by
+# compgen so that it compares like with like: the name as tmux prints it
+# against the half-typed word with its quoting removed.
+_rc_tmux__lines()
 {
+    local line quoted word=$cur
     local -a REPLY
-    _comp_dequote "${comp_args[0]-}" || REPLY=("${comp_args[0]-}")
-    LC_ALL=C "${REPLY[0]}" "$@"
-}
-
-# Parse usage output from tmux.
-#
-# @param $1 Usage from tmux, not including the (sub)command name.
-# @var[out] options associative array mapping options to their value types, or
-#     to the empty string if the option doesn't take a value
-# @var[out] args indexed array of positional arg types
-_comp_cmd_tmux__parse_usage()
-{
-    options=()
-    args=()
-
-    local i j
-    local words
-    _comp_split words "$1"
-    for ((i = 0; i < ${#words[@]}; i++)); do
-        case ${words[i]} in
-            "[-"*"]")
-                # One or more options that don't take arguments, either of the
-                # form `[-abc]` or `[-a|-b|-c]`
-                for ((j = 2; j < ${#words[i]} - 1; j++)); do
-                    if [[ ${words[i]:j:1} != [-\|] ]]; then
-                        options+=(["-${words[i]:j:1}"]="")
-                    fi
-                done
-                ;;
-            "[-"*)
-                # One option that does take an argument.
-                if [[ ${words[i + 1]-} != *"]" ]]; then
-                    _comp_cmd_tmux__log \
-                        "Can't parse option: '${words[*]:i:2}' in '$1'"
-                    break
-                fi
-                options+=(["${words[i]#"["}"]="${words[i + 1]%"]"}")
-                ((i++))
-                ;;
-            -*)
-                _comp_cmd_tmux__log "Can't parse option '${words[i]}' in '$1'"
-                break
-                ;;
-            *)
-                # Start of positional arguments.
-                args=("${words[@]:i}")
-                break
-                ;;
-        esac
-    done
-
-    if [[ ${BASH_COMPLETION_DEBUG-} || -o xtrace ]]; then
-        local arg
-        for arg in "${!options[@]}"; do
-            _comp_cmd_tmux__log "option: ${arg} ${options["$arg"]}"
-        done
-        for arg in "${args[@]}"; do
-            _comp_cmd_tmux__log "arg: ${arg}"
-        done
+    if _comp_dequote "$cur"; then
+        word=${REPLY[0]-}
     fi
+    while IFS= read -r line; do
+        if [[ $line == "$word"* ]]; then
+            printf -v quoted '%q' "$line"
+            COMPREPLY+=("$quoted")
+        fi
+    done < <(_comp_cmd_tmux__run "$@" 2>/dev/null)
 }
 
-# Complete a value either as the argument to an option or as a positional arg.
+# Complete the value types upstream leaves out.
 #
-# @param $1 subcommand that the value is for, or 'tmux' if it's top-level
-# @param $2 type of the value, from _comp_cmd_tmux__parse_usage()
+# @param $1 subcommand the value is for, or 'tmux' if it's top-level
+# @param $2 type of the value, as named in tmux's own usage text
+# @return 1 if the type is not handled here (upstream gets its turn)
+_rc_tmux__value()
+{
+    case $2 in
+        target-window | src-window | dst-window | source-window)
+            _rc_tmux__lines list-windows -a -F '#{session_name}:#{window_index}'
+            ;;
+        target-pane | src-pane | dst-pane | pane)
+            _rc_tmux__lines list-panes -a \
+                -F '#{session_name}:#{window_index}.#{pane_index}'
+            ;;
+        target-client)
+            _rc_tmux__lines list-clients -F '#{client_name}'
+            ;;
+        buffer-name | new-buffer-name)
+            _rc_tmux__lines list-buffers -F '#{buffer_name}'
+            ;;
+        key-table)
+            # Parsed from the plain listing (`bind-key [-r] -T table key ...`):
+            # `list-keys -F` would be neater but tmux only gained it in 3.5.
+            _comp_compgen_split -l -- "$(_comp_cmd_tmux__run list-keys \
+                2>/dev/null |
+                sed -n -e 's/^bind-key[^T]*-T  *\([^ ]*\).*/\1/p' | sort -u)"
+            ;;
+        option)
+            # Server, session and window options (user @options included);
+            # array options print as name[N], so cut the index off too.
+            _comp_compgen_split -l -- "$({
+                _comp_cmd_tmux__run show-options -s
+                _comp_cmd_tmux__run show-options -g
+                _comp_cmd_tmux__run show-options -gw
+            } 2>/dev/null | sed -e 's/[[ ].*//' | sort -u)"
+            ;;
+        hook)
+            _comp_compgen_split -l -- "$(_comp_cmd_tmux__run show-hooks -g \
+                2>/dev/null | sed -e 's/[[ ].*//' | sort -u)"
+            ;;
+        layout-name)
+            _comp_compgen -- -W 'even-horizontal even-vertical main-horizontal
+                main-horizontal-mirrored main-vertical main-vertical-mirrored
+                tiled'
+            ;;
+        socket-name)
+            _comp_compgen_split -l -- "$(command ls \
+                "${TMUX_TMPDIR:-/tmp}/tmux-$UID" 2>/dev/null)"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# Keep upstream's function under another name and put ours in front of it.
+eval "_rc_tmux__upstream_value() $(declare -f _comp_cmd_tmux__value | tail -n +2)"
 _comp_cmd_tmux__value()
 {
-    local subcommand=$1 option_type=$2
-    _comp_cmd_tmux__log \
-        "Trying to complete '$option_type' for subcommand '$subcommand'"
-
-    # To get a list of these argument types, look at `tmux -h` and:
-    #
-    # tmux list-commands -F "#{command_list_usage}" |
-    #   sed 's/[][ ]/\n/g' |
-    #   grep -v ^- |
-    #   sort -u
-    #
-    # TODO: Complete more option types.
-    case $option_type in
-        command)
-            _comp_compgen_split -l -- "$(_comp_cmd_tmux__run \
-                list-commands -F "#{command_list_name}")"
-            ;;
-        directory | *-directory)
-            _comp_compgen_filedir -d
-            ;;
-        file | *-file | path | *-path)
-            _comp_compgen_filedir
-            ;;
-        target-session)
-            _comp_compgen_split -l -- "$(_comp_cmd_tmux__run \
-                list-sessions -F '#{session_name}')"
-            ;;
-    esac
+    _rc_tmux__value "$@" || _rc_tmux__upstream_value "$@"
 }
 
-# Parse command line options to tmux or a subcommand.
-#
-# @param $@ args to tmux or a subcommand, starting with the (sub)command
-#     itself, ending before the current word to complete
-# @var[in] options from _comp_cmd_tmux__parse_usage()
-# @var[out] option_type if the word to complete is the value of an option, this
-#     is the type of that value, otherwise it's empty
-# @var[out] positional_start if option_type is empty, index in $@ of the first
-#     positional argument, or the last index plus 1 if the next word is the
-#     first positional argument, or -1 if the next word could be either the
-#     first positional argument or another option
-_comp_cmd_tmux__options()
+# Targets look like `session:window.pane`, but readline splits words at ':' and
+# upstream then sees three words where tmux sees one. Hand upstream the line
+# re-split with ':' kept inside words, then trim what readline will not replace.
+_rc_tmux()
 {
-    local command_args=("$@")
-    option_type=""
-    positional_start=-1
-
-    local i
-    for ((i = 1; i < ${#command_args[@]}; i++)); do
-        if [[ $option_type ]]; then
-            # arg to the previous option
-            option_type=""
-        elif [[ ${command_args[i]} == -- ]]; then
-            option_type=""
-            ((positional_start = i + 1))
-            return
-        elif [[ ${command_args[i]} == -?* ]]; then
-            # 1 or more options, possibly also with the value of an option.
-            # E.g., if `-a` and `-b` take no values and `-c` does, `-ab` would
-            # be equivalent to `-a -b` and `-acb` would be `-a` and `-c` with a
-            # value of `b`.
-            local j
-            for ((j = 1; j < ${#command_args[i]}; j++)); do
-                if [[ $option_type ]]; then
-                    # arg has both the option and its value
-                    option_type=""
-                    break
-                fi
-                option_type=${options["-${command_args[i]:j:1}"]-}
-            done
-        else
-            # first positional arg
-            ((positional_start = i))
-            return
-        fi
-    done
-}
-
-# Complete arguments to a nested command.
-#
-# @param $1 the arg type of the command, e.g., command or shell-command
-# @param $2... args to the command, starting with the command itself, ending
-#     before the current word to complete
-_comp_cmd_tmux__nested_arguments()
-{
-    local arg_type="$1"
-    shift
-    _comp_cmd_tmux__log \
-        "Attempting completion for arguments to '$1' of type '$arg_type'"
-
-    case $arg_type in
-        command)
-            _comp_cmd_tmux__subcommand "$@"
-            ;;
-    esac
-}
-
-# Complete arguments to a subcommand.
-#
-# @param $@ the subcommand followed by its args, ending before the current word
-#     to complete
-_comp_cmd_tmux__subcommand()
-{
-    local subcommand_args=("$@")
-    local usage=$(_comp_cmd_tmux__run list-commands \
-        -F "#{command_list_name} #{command_list_usage}" -- "$1" 2>/dev/null)
-    if [[ ! $usage ]]; then
-        _comp_cmd_tmux__log "Unknown tmux subcommand: '$1'"
-        return
-    fi
-    local subcommand=${usage%% *} # not $1, because it could be an alias
-    _comp_cmd_tmux__log "Attempting completion for 'tmux $subcommand'"
-
-    local -A options
-    local -a args
-    _comp_cmd_tmux__parse_usage "${usage#* }"
-
-    local option_type
-    local positional_start
-    _comp_cmd_tmux__options "${subcommand_args[@]}"
-
-    if [[ $option_type ]]; then
-        _comp_cmd_tmux__value "$subcommand" "$option_type"
-        return
-    elif ((positional_start < 0)) && [[ $cur == -* ]]; then
-        _comp_compgen -- -W '"${!options[@]}"'
-        return
-    elif ((positional_start < 0)); then
-        # $cur (one past the end of subcommand_args) is the first positional
-        # arg
-        positional_start=${#subcommand_args[@]}
-    fi
-
-    if [[ $subcommand == display-menu ]]; then
-        # display-menu has a non-trivial repeating pattern of positional args
-        # that would need custom logic to support correctly, and it's probably
-        # used in config files or shell scripts more than interactively anyway.
-        _comp_cmd_tmux__log \
-            "Not completing positional args for 'tmux $subcommand'"
-        return
-    fi
-
-    _comp_cmd_tmux__log \
-        "'tmux $subcommand' first positional arg: '${subcommand_args[positional_start]-}'"
-
-    local args_index=$positional_start
-    local usage_args_index
-    local prev_arg_type=""
-    for ((\
-    usage_args_index = 0;  \
-    usage_args_index < ${#args[@]};  \
-    args_index++, usage_args_index++)); do
-        local arg_type=${args[usage_args_index]##+(\[)}
-        arg_type=${arg_type%%+(\])}
-        if [[ $arg_type == ... ]]; then
-            if ((usage_args_index == 0)); then
-                _comp_cmd_tmux__log "'tmux $subcommand' first arg is '...'"
-                return
-            elif ((usage_args_index != ${#args[@]} - 1)); then
-                _comp_cmd_tmux__log \
-                    "'tmux $subcommand' usage has '...' before last arg"
-                return
-            fi
-            # https://man.openbsd.org/style says "Usage statements should take
-            # the same form as the synopsis in manual pages."
-            # https://mandoc.bsd.lv/mdoc/intro/synopsis_util.html says "Some
-            # commands can optionally take more than one argument of the same
-            # kind. This is indicated by an ellipsis trailing the respective Ar
-            # macro." tmux seems to mostly use `...` in that way to only repeat
-            # the previous argument. In display-menu it uses `...` to repeat
-            # all arguments instead, but that subcommand is explicitly ignored
-            # above.
-            _comp_cmd_tmux__value "$subcommand" "$prev_arg_type"
-            return
-        elif [[ $arg_type == argument ]]; then
-            # New-style usage after
-            # https://github.com/tmux/tmux/commit/68ffe654990764ed5bdb7efb88e4d01b921fd3d5
-            # (2025-04-09) ends in `argument ...`
-            if ((usage_args_index == ${#args[@]} - 2)) &&
-                [[ ${args[-1]-} == *("[")...*("]") ]]; then
-                _comp_cmd_tmux__nested_arguments \
-                    "$prev_arg_type" \
-                    "${subcommand_args[@]:args_index-1}"
-                return
-            else
-                _comp_cmd_tmux__log \
-                    "'tmux $subcommand' has unsupported 'argument' in usage"
-                return
-            fi
-        elif [[ $arg_type == arguments ]]; then
-            # Old-style usage before
-            # https://github.com/tmux/tmux/commit/68ffe654990764ed5bdb7efb88e4d01b921fd3d5
-            # (2025-04-09) ends in `arguments`
-            if ((usage_args_index == ${#args[@]} - 1)); then
-                _comp_cmd_tmux__nested_arguments \
-                    "$prev_arg_type" \
-                    "${subcommand_args[@]:args_index-1}"
-                return
-            else
-                _comp_cmd_tmux__log \
-                    "'tmux $subcommand' has unsupported 'arguments' in usage"
-                return
-            fi
-        elif ((args_index == ${#subcommand_args[@]})); then
-            # The usage arg is 1 past the end of $subcommand_args, so complete
-            # it.
-            _comp_cmd_tmux__value "$subcommand" "$arg_type"
-            return
-        fi
-        prev_arg_type=$arg_type
-    done
-
-    _comp_cmd_tmux__log "Too many args to 'tmux $subcommand'"
-}
-
-_comp_cmd_tmux()
-{
-    local cur prev words cword comp_args
-    _comp_initialize -- "$@" || return
-
-    local usage
-    usage=$(_comp_cmd_tmux__run -h 2>&1)
-    # Before https://github.com/tmux/tmux/pull/4455 (merged 2025-04-09), `-h`
-    # produced usage information because it was an error, so we have to trim
-    # the error message too.
-    usage=${usage#$'tmux: unknown option -- h\n'}
-    usage=${usage#usage: tmux }
-
-    local -A options
-    local -a args
-    _comp_cmd_tmux__parse_usage "$usage"
-
-    local option_type
-    local positional_start
-    _comp_cmd_tmux__options "${words[@]:0:cword}"
-
-    if [[ $option_type ]]; then
-        _comp_cmd_tmux__value tmux "$option_type"
-        return
-    elif ((positional_start < 0)) && [[ $cur == -* ]]; then
-        _comp_compgen -- -W '"${!options[@]}"'
-        return
-    elif ((positional_start < 0)); then
-        ((positional_start = cword))
-    fi
-
-    local i
-    local -a REPLY
-    local subcommand_start=$positional_start
-    for ((i = positional_start; i < cword; i++)); do
-        if _comp_dequote "${words[i]}" && [[ ${REPLY[-1]-} =~ (\\*)\;$ ]] &&
-            ((${#BASH_REMATCH[1]} % 2 == 0)); then
-            # end of current command
-            ((subcommand_start = i + 1))
-        fi
-    done
-
-    if ((cword == subcommand_start)); then
-        _comp_cmd_tmux__value tmux command
-    else
-        _comp_cmd_tmux__subcommand \
-            "${words[@]:subcommand_start:cword-subcommand_start}"
-    fi
+    local cur words cword
+    _comp_get_words -n : cur words cword
+    local COMP_WORDS=("${words[@]}") COMP_CWORD=$cword
+    local _rc_tmux_cur=$cur
+    _comp_cmd_tmux "$@"
+    _comp_ltrim_colon_completions "$_rc_tmux_cur"
 } &&
-    complete -F _comp_cmd_tmux tmux
-
-# ex: filetype=sh
+    complete -F _rc_tmux tmux

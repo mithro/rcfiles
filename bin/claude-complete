@@ -1,0 +1,861 @@
+#!/usr/bin/env python3
+"""claude-complete — tab-completion engine for claude, claude-teleport, claude-resume.
+
+Called by the bash shim in bash/completion/claude:
+
+    claude-complete <cword> <word0> <word1> ...
+
+and prints one candidate per line (`value` or `value<TAB>description`), plus
+directive lines the shim acts on:
+
+    @files @dirs @hosts   also offer filenames / directories / ssh hosts
+    @nospace              do not append a space after the completion
+    @nosort               keep this order (e.g. sessions newest-first)
+
+Directive lines start with a TAB, which no candidate can, so a tmux session
+that happens to be called "@files" is still just a candidate. Candidates are
+printed shell-quoted (a backslash before each space etc.), since bash inserts
+them verbatim.
+
+Nothing about either CLI's option set is hard-coded here. The option and
+subcommand lists come from the installed binaries themselves, so a new release
+is completed correctly with no change to this file:
+
+  * claude          — `claude [sub...] --help` is parsed (commander.js layout)
+                      and cached on disk, keyed by the binary's real path +
+                      mtime, so an upgrade invalidates the cache by itself.
+  * claude-teleport — is a cobra program, so its hidden `__complete` command
+                      answers directly (~4 ms; nothing to cache).
+
+What *is* written down here is only what a binary cannot tell us: which
+argument wants a session id, a host, an MCP server name and so on.
+
+stdlib only + `#!/usr/bin/env python3` on purpose (as claude-resume): this runs
+on every <TAB>, so it must start instantly with no uv/venv/network in play.
+"""
+
+import glob
+import hashlib
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+import time
+
+HOME = os.path.expanduser("~")
+CONFIG_DIR = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(HOME, ".claude")
+CACHE_DIR = os.path.join(
+    os.environ.get("XDG_CACHE_HOME") or os.path.join(HOME, ".cache"), "claude-complete"
+)
+DATA_HOME = os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share")
+
+UUID_RE = re.compile(
+    r"\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z"
+)
+SESSION_LIMIT = 50  # newest N sessions offered; typing a prefix searches them all
+TAIL_BYTES = 65536  # how much of a transcript's end is scanned for its title
+
+# Model names are the one list no binary reports. Aliases track "the latest of
+# that family" so they rarely go stale; add full ids here as they ship.
+MODELS = [
+    "fable",
+    "opus",
+    "sonnet",
+    "haiku",
+    "claude-fable-5-2",
+    "claude-opus-5-5",
+    "claude-sonnet-5-5",
+    "claude-haiku-5-5",
+]
+
+
+# --------------------------------------------------------------------------
+# Result accumulator
+# --------------------------------------------------------------------------
+
+
+class Reply:
+    """Candidates + directives for one completion request."""
+
+    def __init__(self, cur):
+        self.cur = cur
+        self.items = []  # (value, description)
+        self.directives = []
+
+    def add(self, values, prefix=None):
+        """Add values (str or (str, desc)) that start with the typed prefix."""
+        prefix = self.cur if prefix is None else prefix
+        seen = {v for v, _ in self.items}
+        for v in values:
+            v, d = v if isinstance(v, tuple) else (v, "")
+            if v.startswith(prefix) and v not in seen:
+                seen.add(v)
+                self.items.append((v, d))
+
+    def directive(self, *names):
+        for n in names:
+            if n not in self.directives:
+                self.directives.append(n)
+
+    def render(self, columns=80, describe=True):
+        """Lines for the shim. Descriptions are shown only when there is a real
+        choice to make: with one candidate bash inserts the text verbatim, so
+        it must be the bare value. (Same trick as cobra's bash completion: the
+        candidates differ before the description starts, so readline's
+        common-prefix insertion never reaches the description.)"""
+        out = ["\t" + d for d in self.directives]
+        generates_more = any(
+            d in self.directives for d in ("@files", "@dirs", "@hosts")
+        )
+        # With @files/@dirs the shim turns on readline's filename quoting,
+        # which quotes every candidate itself; quoting here too would double it.
+        q = (
+            (lambda v: v)
+            if "@files" in self.directives or "@dirs" in self.directives
+            else quote
+        )
+        if (
+            describe
+            and len(self.items) > 1
+            and not generates_more
+            and any(d for _, d in self.items)
+        ):
+            width = max(len(q(v)) for v, _ in self.items)
+            for v, d in self.items:
+                v = q(v)
+                line = f"{v.ljust(width)}  ({d})" if d else v
+                if len(line) > columns - 1:
+                    line = line[: max(columns - 3, len(v) + 4)] + "…)"
+                out.append(line)
+        else:
+            out.extend(q(v) for v, _ in self.items)
+        return out
+
+
+# --------------------------------------------------------------------------
+# Small helpers
+# --------------------------------------------------------------------------
+
+
+def quote(value):
+    """Backslash-escape what the shell would split or expand, as bash's own
+    completion does (`my session` -> `my\\ session`)."""
+    return re.sub(r"([^\w@%+=:,./~-])", r"\\\1", value)
+
+
+def dequote(word):
+    """The text a (possibly half-typed) shell word stands for: `my\\ ses` and
+    `"my ses` both mean `my ses`. Candidates are matched against this."""
+    for attempt in (word, word + '"', word + "'"):
+        try:
+            parts = shlex.split(attempt)
+        except ValueError:
+            continue
+        return parts[0] if len(parts) == 1 else word if parts else ""
+    return word
+
+
+def run(argv, timeout=2, must_succeed=False):
+    """stdout of argv, or '' on any failure — a completer must never raise.
+
+    The timeout is short on purpose: this is somebody's <TAB> key. The
+    binaries asked here answer in well under 200 ms when healthy."""
+    try:
+        p = subprocess.run(
+            argv,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if must_succeed and p.returncode != 0:
+        return ""
+    return p.stdout.decode("utf-8", "replace")
+
+
+def which(name):
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        p = os.path.join(d or ".", name)
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+    return None
+
+
+def load_json(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def first_sentence(text):
+    text = " ".join(text.split())
+    m = re.search(r"[.:;] |\. *$| \(", text)
+    return (text[: m.start()] if m else text).strip()
+
+
+def age(ts, now=None):
+    s = max(0, (now or time.time()) - ts)
+    for unit, n in (("d", 86400), ("h", 3600), ("m", 60)):
+        if s >= n:
+            return f"{int(s // n)}{unit}"
+    return "now"
+
+
+# --------------------------------------------------------------------------
+# commander.js --help parsing (claude)
+# --------------------------------------------------------------------------
+
+
+class Option:
+    def __init__(self, names, arg, desc):
+        self.names = names  # ["-r", "--resume"]
+        self.arg = arg  # "" | "<x>" | "[x]" | "<x...>"
+        self.desc = desc
+        self.choices = parse_choices(desc) if arg else []
+
+    @property
+    def argname(self):
+        return self.arg.strip("<>[].")
+
+    @property
+    def required(self):
+        return self.arg.startswith("<")
+
+    @property
+    def variadic(self):
+        return "..." in self.arg
+
+
+class Command:
+    def __init__(self, names, args, desc):
+        self.names = names  # ["plugin", "plugins"]; names[0] is canonical
+        self.args = args  # positional specs in order: ["<name>", "[args...]"]
+        self.desc = desc
+
+
+_WORD = re.compile(r"\A[A-Za-z][\w.-]*\Z")
+
+
+def parse_choices(desc):
+    """Allowed values, as commander states them in an option's description.
+
+    Exact form:  (choices: "text", "json", "stream-json")
+    Prose form:  (low, medium, high, xhigh, max)  /  (local, user, or project)
+    The prose form is only trusted when every item is a single bare word."""
+    desc = " ".join(desc.split())
+    m = re.search(r"\(choices: ([^)]*)\)", desc)
+    if m:
+        return list(dict.fromkeys(re.findall(r'"([^"]*)"', m.group(1))))
+    for group in re.findall(r"\(([^()]+)\)", desc):
+        items = [re.sub(r"\A(or|and) ", "", i.strip()) for i in group.split(",")]
+        if len(items) >= 2 and all(_WORD.match(i) for i in items):
+            return items
+    return []
+
+
+def parse_help(text):
+    """(options, commands) from one commander help page."""
+    options, commands = [], []
+    section, entry = None, None  # entry = [spec, [description lines]]
+    entries = {"Options": [], "Commands": []}
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        if not line.startswith(" "):
+            section = line.rstrip(":") if line.endswith(":") else None
+            entry = None
+            continue
+        if section not in entries:
+            continue
+        if re.match(r"  \S", line):  # exactly two spaces: a new entry
+            spec, _, desc = line.strip().partition("  ")
+            entry = [spec.strip(), [desc.strip()]]
+            entries[section].append(entry)
+        elif entry:
+            entry[1].append(line.strip())
+
+    for spec, desc in entries["Options"]:
+        m = re.match(r"((?:-[\w-]+(?:, )?)+)(?: (.+))?\Z", spec)
+        if m:
+            options.append(
+                Option(m.group(1).split(", "), m.group(2) or "", " ".join(desc))
+            )
+    for spec, desc in entries["Commands"]:
+        words = spec.split()
+        args = [w for w in words[1:] if w[0] in "<[" and w != "[options]"]
+        commands.append(Command(words[0].split("|"), args, " ".join(desc)))
+    return options, commands
+
+
+class ClaudeHelp:
+    """`claude <chain> --help`, parsed; cached on disk per installed binary."""
+
+    def __init__(self, binary=None):
+        self.binary = binary or which("claude")
+        self._mem = {}
+        self._dir = None
+        if self.binary:
+            try:
+                real = os.path.realpath(self.binary)
+                st = os.stat(real)
+                key = f"{real}\0{st.st_mtime_ns}\0{st.st_size}".encode()
+                self._dir = os.path.join(
+                    CACHE_DIR, hashlib.sha256(key).hexdigest()[:16]
+                )
+            except OSError:
+                pass
+
+    def text(self, chain):
+        if not self.binary:
+            return ""
+        # (a space cannot occur inside a subcommand name, so the join is unambiguous)
+        path = self._dir and os.path.join(self._dir, " ".join(chain) or "_root")
+        if path:
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    return fh.read()
+            except OSError:
+                pass
+        text = run([self.binary, *chain, "--help"], timeout=3, must_succeed=True)
+        if "Usage:" not in text:
+            return ""  # an error message, not a help page: never cache that
+        if path:
+            try:
+                os.makedirs(self._dir, exist_ok=True)
+                tmp = f"{path}.{os.getpid()}"
+                with open(tmp, "w", encoding="utf-8") as fh:
+                    fh.write(text)
+                os.replace(tmp, path)  # atomic: concurrent <TAB>s never see half a file
+            except OSError:
+                pass
+        return text
+
+    def get(self, chain):
+        chain = tuple(chain)
+        if chain not in self._mem:
+            self._mem[chain] = parse_help(self.text(chain))
+        return self._mem[chain]
+
+
+# --------------------------------------------------------------------------
+# Dynamic value sources (things on this machine)
+# --------------------------------------------------------------------------
+
+
+def munge(path):
+    """Claude Code's project-dir naming: every non-alphanumeric becomes '-'."""
+    return re.sub(r"[^A-Za-z0-9]", "-", path)
+
+
+def live_sessions():
+    """sessionId -> registry entry for every running Claude (~/.claude/sessions)."""
+    out = {}
+    for p in glob.glob(os.path.join(CONFIG_DIR, "sessions", "*.json")):
+        d = load_json(p)
+        if isinstance(d, dict) and d.get("sessionId"):
+            out[d["sessionId"]] = d
+    return out
+
+
+_TITLE_RES = [
+    re.compile(r'"customTitle":"((?:[^"\\]|\\.)*)"'),
+    re.compile(r'"aiTitle":"((?:[^"\\]|\\.)*)"'),
+    re.compile(r'"lastPrompt":"((?:[^"\\]|\\.)*)"'),
+]
+
+
+def transcript_title(path):
+    """Best label found in the *tail* of a transcript.
+
+    Transcripts run to megabytes, so they are never read whole on a <TAB>;
+    Claude re-appends the title records near the end, which is what we scan."""
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            fh.seek(max(0, fh.tell() - TAIL_BYTES))
+            tail = fh.read().decode("utf-8", "replace")
+    except OSError:
+        return ""
+    for rx in _TITLE_RES:
+        hits = rx.findall(tail)
+        if hits:
+            try:
+                return " ".join(json.loads(f'"{hits[-1]}"').split())
+            except ValueError:
+                return " ".join(hits[-1].split())
+    return ""
+
+
+def sessions(prefix, project=None):
+    """[(session id, description)] newest first.
+
+    project=None searches every project (claude-resume / claude-teleport find a
+    session wherever it lives); otherwise only that project dir, because
+    `claude --resume <id>` resolves ids against the current directory only."""
+    pattern = os.path.join(CONFIG_DIR, "projects", project or "*", prefix + "*.jsonl")
+    found = []
+    for p in glob.glob(pattern):
+        sid = os.path.basename(p)[: -len(".jsonl")]
+        if UUID_RE.match(sid):
+            try:
+                found.append((os.stat(p).st_mtime, sid, p))
+            except OSError:
+                pass
+    found.sort(reverse=True)
+    live = live_sessions()
+    out = []
+    for mtime, sid, path in found[:SESSION_LIMIT]:
+        title = (live.get(sid) or {}).get("name") or transcript_title(path)
+        bits = [age(mtime)]
+        if sid in live:
+            bits.append("live")
+        desc = ", ".join(bits) + (f": {title}" if title else "")
+        out.append((sid, desc))
+    return out
+
+
+def background_ids():
+    """Short ids of background sessions (`claude attach|logs|stop|rm|respawn`)."""
+    ids = []
+    for p in glob.glob(os.path.join(CONFIG_DIR, "jobs", "*")):
+        if os.path.isdir(p) and re.fullmatch(r"[0-9a-f]{8}", os.path.basename(p)):
+            ids.append(os.path.basename(p))
+    return sorted(ids)
+
+
+def mcp_servers(cwd):
+    names = []
+    cfg = load_json(os.path.join(HOME, ".claude.json")) or {}
+    names += list((cfg.get("mcpServers") or {}).keys())
+    proj = (cfg.get("projects") or {}).get(cwd) or {}
+    names += list((proj.get("mcpServers") or {}).keys())
+    local = load_json(os.path.join(cwd, ".mcp.json")) or {}
+    names += list((local.get("mcpServers") or {}).keys())
+    return sorted(set(names))
+
+
+def marketplaces():
+    d = load_json(os.path.join(CONFIG_DIR, "plugins", "known_marketplaces.json"))
+    return d if isinstance(d, dict) else {}
+
+
+def installed_plugins():
+    d = load_json(os.path.join(CONFIG_DIR, "plugins", "installed_plugins.json")) or {}
+    return sorted((d.get("plugins") or {}).keys())
+
+
+def available_plugins():
+    """name@marketplace for every plugin the configured marketplaces list."""
+    out = []
+    for mname, info in marketplaces().items():
+        loc = (info or {}).get("installLocation") or ""
+        cat = load_json(os.path.join(loc, ".claude-plugin", "marketplace.json")) or {}
+        for plug in cat.get("plugins") or []:
+            if isinstance(plug, dict) and plug.get("name"):
+                out.append(f"{plug['name']}@{mname}")
+    return sorted(out)
+
+
+def agent_names(cwd):
+    names = set()
+    for d in (
+        os.path.join(CONFIG_DIR, "agents"),
+        os.path.join(cwd, ".claude", "agents"),
+    ):
+        for p in glob.glob(os.path.join(d, "*.md")):
+            names.add(os.path.basename(p)[:-3])
+    return sorted(names)
+
+
+def tmux_list(*args):
+    return [ln for ln in run(["tmux", *args], timeout=2).splitlines() if ln]
+
+
+def path_directive(argname):
+    """@dirs / @files when an argument's own name says it is a path."""
+    n = argname.lower()
+    if "dir" in n or n == "cwd":
+        return "@dirs"
+    if re.search(r"path|file|config|source", n):
+        return "@files"
+    return None
+
+
+# --------------------------------------------------------------------------
+# claude
+# --------------------------------------------------------------------------
+
+
+def claude_option_values(reply, opt, chain, hlp, cwd, cur):
+    """Candidates for the value of `opt`."""
+    long_names = [n for n in opt.names if n.startswith("--")]
+    name = long_names[0] if long_names else opt.names[0]
+    choices = opt.choices
+    if not choices and chain:
+        # A subcommand often repeats a root option without restating its
+        # values (`claude agents --effort <level>`): borrow the root's.
+        for ropt in hlp.get(())[0]:
+            if name in ropt.names:
+                choices = ropt.choices
+    if name in ("--model", "--fallback-model"):
+        reply.add(MODELS, cur)
+    elif name == "--resume":
+        reply.add(sessions(cur, munge(cwd)), cur)
+        reply.directive("@nosort")
+    elif name == "--agent":
+        reply.add(agent_names(cwd), cur)
+    elif name == "--autocompact":
+        reply.add(["auto"], cur)
+    elif choices:
+        reply.add(choices, cur)
+    elif name == "--scope":
+        reply.add(["local", "user", "project"], cur)
+    else:
+        d = path_directive(opt.argname)
+        if d:
+            reply.directive(d)
+
+
+def claude_positional(reply, chain, spec, parent_cmds, cwd):
+    """Candidates for a subcommand's positional argument `spec` (e.g. '<name>')."""
+    name = spec.strip("<>[].")
+    top = chain[0] if chain else ""
+    leaf = chain[-1] if chain else ""
+    if top in ("attach", "logs", "stop", "rm", "respawn"):
+        reply.add(background_ids())
+    elif top == "mcp" and name == "name" and leaf != "add" and leaf != "add-json":
+        reply.add(mcp_servers(cwd))
+    elif top == "plugin" and "marketplace" in chain and name == "name":
+        reply.add(sorted(marketplaces()))
+    elif top == "plugin" and leaf == "install" and name == "plugin":
+        reply.add(available_plugins())
+    elif top == "plugin" and name in ("plugin", "name") and leaf != "init":
+        reply.add(installed_plugins())
+    elif top == "install" and name == "target":
+        reply.add(["stable", "latest"])
+    elif leaf == "help" and name == "command":
+        reply.add([n for c in parent_cmds for n in c.names[:1] if n != "help"])
+    else:
+        d = path_directive(name)
+        if d:
+            reply.directive(d)
+
+
+def complete_claude(words, cword, cwd, hlp=None):
+    hlp = hlp or ClaudeHelp()
+    cur = words[cword] if cword < len(words) else ""
+    reply = Reply(cur)
+
+    chain = []
+    options, commands = hlp.get(chain)
+    parent_cmds = commands
+    command = None  # the Command we most recently descended into
+    npos = 0  # positionals seen since then
+    pending = None  # (option, first?) when the *next* word may be its value
+    dashdash = False
+
+    def find_opt(word):
+        for o in options:
+            if word in o.names:
+                return o
+        return None
+
+    def consumes(word):
+        """Is `word` the value of the pending option?  A required argument
+        takes whatever comes next; an optional one, or a further value of a
+        variadic one, only a word that does not look like an option."""
+        opt, first = pending
+        return (opt.required and first) or not word.startswith("-")
+
+    for w in words[1:cword]:
+        if pending:
+            taken = consumes(w)
+            pending = (pending[0], False) if taken and pending[0].variadic else None
+            if taken:
+                continue
+        if dashdash:
+            npos += 1
+        elif w == "--":
+            dashdash = True
+        elif w.startswith("-"):
+            o = find_opt(w.split("=", 1)[0])
+            if o and o.arg and "=" not in w:
+                pending = (o, True)
+        else:
+            cmd = next((c for c in commands if w in c.names), None)
+            if cmd and npos == 0:
+                chain.append(cmd.names[0])
+                parent_cmds, command = commands, cmd
+                options, commands = hlp.get(chain)
+                npos = 0
+            else:
+                npos += 1
+
+    # --opt=value
+    m = re.match(r"(--?[\w-]+)=(.*)\Z", cur, re.DOTALL)
+    if m and not dashdash:
+        o = find_opt(m.group(1))
+        if o and o.arg:
+            reply.cur = m.group(2)
+            claude_option_values(reply, o, chain, hlp, cwd, m.group(2))
+        return reply
+
+    # value of the previous option
+    if pending and consumes(cur):
+        claude_option_values(reply, pending[0], chain, hlp, cwd, cur)
+        return reply
+
+    if cur.startswith("-") and not dashdash:
+        for o in options:
+            desc = first_sentence(o.desc)
+            # Short forms only clutter a `--` listing; show them for a bare `-`.
+            reply.add([(n, desc) for n in o.names if n.startswith("--") or cur == "-"])
+        return reply
+
+    if npos == 0 and not dashdash:
+        for c in commands:
+            desc = first_sentence(c.desc)
+            reply.add([(n, desc) for n in c.names if len(n) > 1])
+    specs = command.args if command else ["[prompt]"]
+    if specs:
+        spec = specs[min(npos, len(specs) - 1)]
+        if npos < len(specs) or "..." in spec:
+            claude_positional(reply, chain, spec, parent_cmds, cwd)
+    if not chain and not reply.items and cur:
+        reply.directive("@files")  # a prompt may well name a file
+    return reply
+
+
+# --------------------------------------------------------------------------
+# claude-teleport (cobra)
+# --------------------------------------------------------------------------
+
+TELEPORT_HOST_FLAGS = {
+    "--to", "--from", "--teleport-to", "--teleport-from", "--via", "--host", "--teleported-to",
+}  # fmt: skip
+TELEPORT_SESSION_FLAGS = {"--resume", "--session"}
+TELEPORT_DIR_FLAGS = {"--dest-path", "--config-dir"}
+TELEPORT_FILE_FLAGS = {"--log", "--saved-output"}
+# cobra lists the canonical spelling only; these are accepted everywhere it is.
+TELEPORT_ALIASES = {"--teleport-to": "--to", "--teleport-from": "--from"}
+SSH_OPTIONS = [
+    "User=",
+    "Port=",
+    "IdentityFile=",
+    "StrictHostKeyChecking=",
+    "ProxyJump=",
+]
+
+
+class Cobra:
+    """A cobra binary's own `__complete` endpoint."""
+
+    def __init__(self, binary):
+        self.binary = binary
+        self._arity = {}
+
+    def complete(self, args):
+        """[(value, description)] for completing args[-1] after args[:-1]."""
+        out = []
+        for line in run([self.binary, "__complete", *args]).splitlines():
+            if line.startswith((":", "Completion ended")):
+                continue
+            v, _, d = line.partition("\t")
+            if v:
+                out.append((v, d))
+        return out
+
+    def takes_value(self, context, flag):
+        """Does `flag` consume the next word?  cobra has no direct query, so
+        probe: ask it to complete "-" right after the flag. A boolean flag is
+        finished, so cobra lists flags; a value flag swallows the "-" as its
+        value and has nothing to list."""
+        if "=" in flag or not flag.startswith("-"):
+            return False
+        key = (tuple(context), flag)
+        if key not in self._arity:
+            listed = self.complete([*context, "-"])
+            known = (
+                any(v == flag for v, _ in listed) or flag in TELEPORT_ALIASES.values()
+            )
+            self._arity[key] = known and not self.complete([*context, flag, "-"])
+        return self._arity[key]
+
+
+def teleport_choices(help_text, flag):
+    """Values the help spells out as `--state auto|running|suspended|idle`."""
+    m = re.search(re.escape(flag) + r"\s+([a-z]+(?:\|[a-z]+)+)", help_text)
+    return m.group(1).split("|") if m else []
+
+
+def teleport_jobs(prefix):
+    ids = [
+        os.path.basename(p)
+        for p in glob.glob(
+            os.path.join(DATA_HOME, "claude-teleport", "jobs", prefix + "*")
+        )
+    ]
+    return sorted(ids)
+
+
+def teleport_flag_values(reply, cobra, flag, cur):
+    if flag in TELEPORT_HOST_FLAGS:
+        reply.directive("@hosts")
+    elif flag in TELEPORT_SESSION_FLAGS:
+        reply.add(sessions(cur), cur)
+        reply.directive("@nosort")
+    elif flag in TELEPORT_DIR_FLAGS:
+        reply.directive("@dirs")
+    elif flag in TELEPORT_FILE_FLAGS:
+        reply.directive("@files")
+    elif flag == "--tmux-session":
+        reply.add(tmux_list("list-sessions", "-F", "#{session_name}"), cur)
+    elif flag in ("-o", "--option"):
+        reply.add(SSH_OPTIONS, cur)
+        reply.directive("@nospace")
+    else:
+        reply.add(teleport_choices(run([cobra.binary, "--help"]), flag), cur)
+
+
+def complete_teleport(words, cword, cobra=None):
+    cobra = cobra or Cobra(which("claude-teleport") or "claude-teleport")
+    cur = words[cword] if cword < len(words) else ""
+    reply = Reply(cur)
+    subcommands = {v: d for v, d in cobra.complete([""])}
+
+    sub, positionals, pending, context = None, [], None, []
+    for w in words[1:cword]:
+        if pending:
+            pending = None
+        elif w == "--":
+            pass
+        elif w.startswith("-"):
+            if cobra.takes_value(context, w):
+                pending = w
+        elif sub is None and not positionals and w in subcommands:
+            sub = w
+        else:
+            positionals.append(w)
+        context.append(w)
+
+    m = re.match(r"(--?[\w-]+)=(.*)\Z", cur, re.DOTALL)
+    if m:
+        reply.cur = m.group(2)
+        teleport_flag_values(reply, cobra, m.group(1), m.group(2))
+        return reply
+    if pending:
+        teleport_flag_values(reply, cobra, pending, cur)
+        return reply
+
+    if cur.startswith("-"):
+        # Ask for the whole flag set and filter here: cobra filters by prefix
+        # itself, and so would never offer an alias it does not list.
+        flags = cobra.complete([*context, "--" if cur.startswith("--") else "-"])
+        flags += [
+            (TELEPORT_ALIASES[v], f"alias of {v}")
+            for v, _ in flags
+            if v in TELEPORT_ALIASES
+        ]
+        reply.add(sorted(flags))
+        return reply
+
+    n = len(positionals)
+    if sub is None and n == 0:
+        # <session>, a subcommand, or the <tmux-session> of `<tmux-session> <window>`
+        reply.add(sorted(subcommands.items()))
+        reply.add(sessions(cur))
+        reply.add(
+            [
+                (s, "tmux session")
+                for s in tmux_list("list-sessions", "-F", "#{session_name}")
+            ]
+        )
+        reply.directive("@nosort")
+    elif sub is None and n == 1 and not UUID_RE.match(positionals[0]):
+        reply.add(
+            tmux_list(
+                "list-windows", "-t", "=" + positionals[0], "-F", "#{window_index}"
+            )
+        )
+        reply.add(
+            tmux_list(
+                "list-windows", "-t", "=" + positionals[0], "-F", "#{window_name}"
+            )
+        )
+    elif sub in ("continue", "status", "abandon") and n == 0:
+        reply.add(teleport_jobs(cur))
+    elif sub == "inspect" and n == 0:
+        reply.add(sessions(cur))
+        reply.directive("@nosort")
+    elif sub in ("compare-config", "doctor") and n == 0:
+        reply.directive("@hosts")
+    elif sub == "help" and n == 0:
+        reply.add(sorted(subcommands.items()))
+    elif sub == "completion" and n == 0:
+        reply.add(cobra.complete([sub, cur]))
+    return reply
+
+
+# --------------------------------------------------------------------------
+# claude-resume
+# --------------------------------------------------------------------------
+
+
+def complete_resume(words, cword):
+    cur = words[cword] if cword < len(words) else ""
+    reply = Reply(cur)
+    if cword == 1:
+        reply.add(sessions(cur))
+        reply.directive("@nosort")
+    return reply
+
+
+# --------------------------------------------------------------------------
+
+
+def main(argv):
+    if len(argv) < 3:
+        sys.stderr.write(__doc__)
+        return 2
+    try:
+        cword = int(argv[1])
+    except ValueError:
+        return 2
+    words = [argv[2], *(dequote(w) for w in argv[3:])]
+    cmd = os.path.basename(words[0])
+    try:
+        cwd = os.getcwd()
+    except OSError:  # the shell is sitting in a directory that was deleted
+        cwd = os.environ.get("PWD") or "/"
+    if cmd == "claude-teleport":
+        reply = complete_teleport(words, cword)
+    elif cmd == "claude-resume":
+        reply = complete_resume(words, cword)
+    else:
+        reply = complete_claude(words, cword, cwd)
+    try:
+        columns = int(os.environ.get("COLUMNS") or 80)
+    except ValueError:
+        columns = 80
+    describe = os.environ.get("CLAUDE_COMPLETE_DESCRIPTIONS", "1") != "0"
+    # A locale that cannot encode a title must cost a '?', not the completion.
+    sys.stdout.reconfigure(errors="replace")
+    sys.stdout.write("".join(line + "\n" for line in reply.render(columns, describe)))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv))
+    except Exception:
+        # Whatever went wrong, a traceback sprayed across somebody's prompt is
+        # worse than no completion. CLAUDE_COMPLETE_DEBUG=1 shows it.
+        if os.environ.get("CLAUDE_COMPLETE_DEBUG"):
+            raise
+        sys.exit(0)
