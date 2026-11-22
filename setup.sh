@@ -874,6 +874,18 @@ function claude_sessions_backup {
 # Fix permissions
 umask 022
 
+# With arguments, run only the named steps (the function names below) and stop,
+# e.g. after a change to one unit on a host where nothing else should be redone
+# or restarted:
+#   ./setup.sh claude_sessions_backup
+# Without arguments everything below runs, as on a fresh install.
+if [ $# -gt 0 ]; then
+	for STEP in "$@"; do
+		"$STEP"
+	done
+	exit 0
+fi
+
 bin
 
 linkit ack

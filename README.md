@@ -179,6 +179,10 @@ git submodule update --init --recursive
 ./setup.sh
 ```
 
+To redo only some steps (the function names in `setup.sh`), name them: for
+example `./setup.sh claude_sessions_backup` re-links and re-enables just the
+Claude sessions backup units, and nothing else is touched or restarted.
+
 ## Contributing
 
 This is a personal dotfiles repository. Feel free to fork and adapt for your own use.
