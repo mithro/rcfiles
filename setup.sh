@@ -5,11 +5,14 @@
 set -e
 set -x
 
-# Setup git submodules.
-git submodule sync --recursive
-git submodule update --recursive --init
-git submodule foreach \
+# Setup git submodules. A step like the rest (run first by default) so that
+# naming steps on the command line really runs only those.
+function submodules {
+	git submodule sync --recursive
 	git submodule update --recursive --init
+	git submodule foreach \
+		git submodule update --recursive --init
+}
 
 # Convert git remote origin to SSH if it's using HTTPS
 CURRENT_ORIGIN=$(git remote get-url origin)
@@ -885,6 +888,8 @@ if [ $# -gt 0 ]; then
 	done
 	exit 0
 fi
+
+submodules
 
 bin
 
