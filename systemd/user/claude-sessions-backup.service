@@ -17,5 +17,7 @@ ExecStart=%h/bin/claude-sessions-backup.py
 Environment=SSH_AUTH_SOCK=
 Nice=10
 IOSchedulingClass=idle
-# A laptop off the network just fails this run; the timer retries next hour.
+# A connection that fails (laptop off the network, cross-site tunnel or resolver
+# blip) is tried again inside the run (RETRY_DELAYS in the script); past that
+# the run fails and the timer tries again next hour.
 TimeoutStartSec=1h

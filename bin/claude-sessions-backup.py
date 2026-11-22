@@ -35,6 +35,11 @@ while backups are fresh; it names this machine when its last full success is
 older than STALE_AFTER, and on big-storage it also names every other machine
 whose .last-backup is that old. (From 2026-09-30 to 2026-11-18 every machine
 failed hourly and only the journal knew.)
+
+Transient failures: a job whose rsync exits with a connection-level code
+(RETRY_ON) is tried again after each delay in RETRY_DELAYS, so a cross-site
+tunnel or resolver blip of a minute or two costs nothing. A job that still
+fails counts as failed and the timer tries again next hour.
 """
 
 import datetime
@@ -139,6 +144,15 @@ RSYNC_OPTS = [
 ]
 # 24 = "some source files vanished": normal while sessions are being written.
 RSYNC_OK = (0, 24)
+# Exit codes of a transfer that never got going, as opposed to one that ran and
+# hit a file problem: ssh could not resolve, connect or authenticate (255), the
+# stream broke (12) or an I/O timeout hit (30). Between the sites these are what
+# a WireGuard or resolver blip looks like (2026-11-20 on ten64.monarto: one run
+# lost to "Could not resolve hostname" during an eth9 carrier flap, the next
+# hour fine), so the job is run again after each delay in RETRY_DELAYS. An
+# authentication refusal also exits 255 but is never transient: not retried.
+RETRY_ON = (12, 30, 255)
+RETRY_DELAYS = (30, 90)
 # -F /dev/null: ignore ~/.ssh/config so no other IdentityFile (some hosts keep
 # an unencrypted, unrestricted key there) can be offered instead of KEY, and
 # no ControlMaster socket from an interactive login can be reused, which would
@@ -168,6 +182,27 @@ def machine_label() -> str:
 def rsync_escape(name: str) -> str:
     """Escape a literal file name for use in an rsync filter pattern."""
     return "".join("\\" + c if c in "*?[\\" else c for c in name)
+
+
+def transient(r: subprocess.CompletedProcess) -> bool:
+    """Whether a failed rsync looks like a connection blip worth another try."""
+    return r.returncode in RETRY_ON and "Permission denied" not in r.stderr
+
+
+def run_rsync(label: str, args: list) -> subprocess.CompletedProcess:
+    """Run one rsync job, repeating it after each RETRY_DELAYS on a transient failure."""
+    delays = list(RETRY_DELAYS)
+    while True:
+        r = subprocess.run(args, capture_output=True, text=True, check=False)
+        if r.returncode in RSYNC_OK or not delays or not transient(r):
+            return r
+        delay = delays.pop(0)
+        print(
+            f"  retry {label}: rsync exit {r.returncode}, again in {delay}s\n"
+            f"{r.stderr.strip()[:300]}",
+            file=sys.stderr,
+        )
+        time.sleep(delay)
 
 
 def plan_jobs(sources, dest_prefix: str):
@@ -336,12 +371,7 @@ def main() -> int:
         if src is None:
             print(f"  skip {job_label}: not present")
             continue
-        r = subprocess.run(
-            [*rsync_base, *extra, src, dest],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        r = run_rsync(job_label, [*rsync_base, *extra, src, dest])
         stats = {
             ln.split(":")[0].strip(): ln.split(":", 1)[1].strip()
             for ln in r.stdout.splitlines()
@@ -371,12 +401,7 @@ def main() -> int:
         with tempfile.TemporaryDirectory() as td:
             marker = pathlib.Path(td) / ".last-backup"
             marker.write_text(stamp)
-            r = subprocess.run(
-                [*rsync_base, str(marker), f"{dest_prefix}./"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            r = run_rsync("marker", [*rsync_base, str(marker), f"{dest_prefix}./"])
             if r.returncode != 0:
                 failures += 1
                 print(f"  FAIL marker: {r.stderr.strip()[:500]}", file=sys.stderr)

@@ -12,8 +12,10 @@ rejects, symlinked project directories copied as links), and those can be
 checked without a network. Real rsync is used for the end-to-end layout case.
 """
 
+import contextlib
 import datetime
 import importlib.util
+import io
 import os
 import pathlib
 import shutil
@@ -224,6 +226,68 @@ def test_real_rsync_layout():
     )
 
 
+def test_run_rsync():
+    """Connection blips are retried after RETRY_DELAYS; everything else is not."""
+    real_run, real_sleep = csb.subprocess.run, csb.time.sleep
+    calls, sleeps = [], []
+
+    def scenario(results):
+        queue = list(results)
+
+        def fake_run(args, **_kwargs):
+            calls.append(args)
+            code, err = queue.pop(0)
+            return subprocess.CompletedProcess(args, code, stdout="", stderr=err)
+
+        calls.clear()
+        sleeps.clear()
+        csb.subprocess.run = fake_run
+        log = io.StringIO()
+        with contextlib.redirect_stderr(log):
+            r = csb.run_rsync("job", ["rsync", "src", "dst"])
+        return r.returncode, len(calls), log.getvalue()
+
+    csb.time.sleep = sleeps.append
+    try:
+        dns = "ssh: Could not resolve hostname big-storage: Name or service not known\n"
+        got = scenario([(255, dns), (0, "")])
+        case(
+            "a resolver blip is retried and then succeeds",
+            got[:2] == (0, 2) and sleeps == [csb.RETRY_DELAYS[0]],
+            (got[:2], sleeps),
+        )
+        case(
+            "the retry is logged with the reason",
+            "retry job: rsync exit 255, again in" in got[2] and dns.strip() in got[2],
+            got[2],
+        )
+        down = "ssh: connect to host big-storage port 22: No route to host\n"
+        got = scenario([(255, down)] * 5)
+        case(
+            "retries stop after RETRY_DELAYS",
+            got[:2] == (255, len(csb.RETRY_DELAYS) + 1)
+            and sleeps == list(csb.RETRY_DELAYS),
+            (got[:2], sleeps),
+        )
+        got = scenario([(12, "rsync: connection unexpectedly closed\n"), (0, "")])
+        case("a broken stream is retried", got[:2] == (0, 2), got[:2])
+        refused = "tim@big-storage: Permission denied (publickey,password).\n"
+        got = scenario([(255, refused), (0, "")])
+        case(
+            "an authentication refusal is not retried",
+            got[:2] == (255, 1) and sleeps == [],
+            (got[:2], sleeps),
+        )
+        got = scenario(
+            [(23, "rsync: some files/attrs were not transferred\n"), (0, "")]
+        )
+        case("a file error is not retried", got[:2] == (23, 1), got[:2])
+        got = scenario([(24, "")])
+        case("vanished source files are a success", got[:2] == (24, 1), got[:2])
+    finally:
+        csb.subprocess.run, csb.time.sleep = real_run, real_sleep
+
+
 def test_stale_machines():
     with tempfile.TemporaryDirectory(dir=HERE) as td:
         root = pathlib.Path(td)
@@ -302,6 +366,7 @@ if __name__ == "__main__":
     test_plan_shapes()
     test_escape()
     test_real_rsync_layout()
+    test_run_rsync()
     test_stale_machines()
     test_update_state()
     if FAILED:
