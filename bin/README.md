@@ -14,6 +14,7 @@ This directory contains utility scripts that are symlinked to `~/bin/` during se
 
 - **`chrome-personal.sh`** - Launch Chrome with personal profile
 - **`chrome-work.sh`** - Launch Chrome with work profile
+- **`chrome-profiles.py`** - Report every Chrome profile on the machine: running browser and root pid, Chrome sign-in, sync, and the Claude in Chrome extension's state (table, Markdown or `--json`; read-only). Tests: `uv run python bin/test_chrome_profiles.py`
 
 ### Development Tools
 
