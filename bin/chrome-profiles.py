@@ -29,7 +29,9 @@ Where each fact comes from:
   chrome login info_cache[..].user_name (the account Chrome itself is signed
                in to)
   sync         <profile>/Preferences -> google.services.consented_to_sync and
-               sync.has_setup_completed
+               sync.has_setup_completed. A profile Chrome has migrated to
+               "signed in without full sync" shows as off though some data
+               still syncs.
   web logins   <profile>/Preferences -> account_info (Google accounts signed
                in on the web in that profile; not the same as the Chrome login)
   running      /proc: a chrome or chromium executable with no --type= argument
@@ -59,8 +61,10 @@ JSON shape:
                        "profiles": [{"dir", "name", "exists", "chrome_signin",
                                      "sync", "web_accounts", "windows_open",
                                      "claude_extension": {"installed", ...}}]}],
+   "errors": [{"user_data_dir": str, "error": str}],
    "unmatched_running": {user-data-dir: {...}}}
-Profiles listed in Local State whose directory is gone have "exists": false;
+A directory whose files could not be made sense of is listed in "errors" (and
+noted under the tables) instead of stopping the report. Profiles listed in Local State whose directory is gone have "exists": false;
 the tables leave them out and say how many were skipped.
 """
 
@@ -76,7 +80,13 @@ from collections import Counter
 
 EXTENSION_ID = "fcoeoabgfenejglbffodgkkbkcdhcgfn"  # Claude in Chrome (Web Store)
 
-BROWSER_EXES = {"chrome", "chromium", "chromium-browser"}
+BROWSER_EXES = {
+    "chrome",
+    "chromium",
+    "chromium-browser",
+    "chrome-headless-shell",
+    "headless_shell",
+}
 # Where a browser keeps its profiles when started without --user-data-dir:
 # (executable path prefix, directory relative to $XDG_CONFIG_HOME or to ~).
 DEFAULT_DIRS = [
@@ -220,7 +230,12 @@ def read_log(data):
 
 def leveldb_entries(directory):
     """Every record in a LevelDB directory, newest and oldest alike. Tolerates a file changing underfoot."""
-    for name in sorted(os.listdir(directory)):
+    try:
+        names = sorted(os.listdir(directory))
+    except OSError as e:
+        print(f"warning: {directory}: {type(e).__name__}: {e}", file=sys.stderr)
+        return
+    for name in names:
         reader = (
             read_table
             if name.endswith(".ldb")
@@ -269,45 +284,71 @@ def config_home(env=os.environ):
     )
 
 
-def parse_cmdline(raw):
+def parse_cmdline(raw, cwd=None):
     """(is a browser rather than a child, {--option: value}) from /proc/<pid>/cmdline.
 
-    Chrome rewrites its command line with spaces instead of NULs (the browser
-    as well as its children), so cut before each " --option". A value keeps
-    its own spaces; the last option also swallows any trailing URL, which only
-    matters for the port, so that is cut back to its digits.
+    A real argv is NUL separated. Chrome usually rewrites its command line
+    with spaces instead (the browser as well as its children); that form is
+    cut before each " --option", so a value keeps its own spaces but also
+    swallows any positional argument after it, such as a URL. Two values are
+    repaired: the port is cut back to its digits, and --user-data-dir drops
+    trailing words until what is left is a directory. A relative
+    --user-data-dir is taken from `cwd`, the browser's working directory.
     """
-    args = re.split(r"[\0 ]+(?=--)", raw.rstrip("\0"))
-    opts = dict(
-        a.rstrip("\0").split("=", 1) for a in args if a.startswith("--") and "=" in a
-    )
+    raw = raw.rstrip("\0")
+    spaced = "\0" not in raw
+    args = re.split(r" +(?=--)", raw) if spaced else raw.split("\0")
+    opts = dict(a.split("=", 1) for a in args if a.startswith("--") and "=" in a)
     if "--remote-debugging-port" in opts:
         opts["--remote-debugging-port"] = re.match(
             r"\d*", opts["--remote-debugging-port"]
         ).group()
+    udd = opts.get("--user-data-dir")
+    if udd:
+        words = udd.split(" ")
+        candidates = (
+            [" ".join(words[:n]) for n in range(len(words), 0, -1)] if spaced else [udd]
+        )
+        candidates = [os.path.join(cwd or "", c) for c in candidates]
+        opts["--user-data-dir"] = next(filter(os.path.isdir, candidates), candidates[0])
     return "--type" not in opts, opts
 
 
 def default_user_data_dir(exe, env):
     for prefix, base, rel in DEFAULT_DIRS:
-        if exe.startswith(prefix):
-            return os.path.join(
-                config_home(env) if base == "config" else env.get("HOME") or home(), rel
-            )
+        if not exe.startswith(prefix):
+            continue
+        if base == "config":
+            return os.path.join(config_home(env), rel)
+        # A snap sees a private $HOME; these name the directories it really uses.
+        if env.get("SNAP_USER_COMMON"):
+            return os.path.join(env["SNAP_USER_COMMON"], os.path.basename(rel))
+        return os.path.join(env.get("SNAP_REAL_HOME") or home(), rel)
     return None
 
 
 def running_browsers(proc_root="/proc"):
     """{user-data-dir: {pid, exe, display, cdp_port}} for every Chrome browser process."""
     found = {}
-    for proc in glob.glob(os.path.join(proc_root, "[0-9]*")):
+    # Oldest first, and the first claim on a directory stands: a later `chrome
+    # URL` that only hands its URL to the running browser must not replace it.
+    for proc in sorted(
+        glob.glob(os.path.join(proc_root, "[0-9]*")),
+        key=lambda p: int(os.path.basename(p)),
+    ):
         try:
             exe = os.readlink(proc + "/exe")
             exe = exe.removesuffix(" (deleted)")  # replaced by an update while running
             if os.path.basename(exe) not in BROWSER_EXES:
                 continue
+            try:
+                cwd = os.readlink(proc + "/cwd")
+            except OSError:
+                cwd = None  # only needed for a relative --user-data-dir
             with open(proc + "/cmdline", "rb") as f:
-                is_browser, opts = parse_cmdline(f.read().decode("utf-8", "replace"))
+                is_browser, opts = parse_cmdline(
+                    f.read().decode("utf-8", "replace"), cwd
+                )
             if not is_browser:
                 continue  # renderer, GPU, utility, zygote, crashpad
             with open(proc + "/environ", "rb") as f:
@@ -322,10 +363,12 @@ def running_browsers(proc_root="/proc"):
             opts.get("--user-data-dir")
             or env.get("CHROME_USER_DATA_DIR")
             or default_user_data_dir(exe, env)
-            or f"?unknown-default-for:{exe}"
+            or f"?unknown-default-for:{exe}:{os.path.basename(proc)}"
         )
         if not udd.startswith("?"):
             udd = os.path.realpath(udd)
+        if udd in found:
+            continue
         port = opts.get("--remote-debugging-port")
         if port is not None:
             try:  # with port 0 Chrome writes the port it really chose here
@@ -338,7 +381,7 @@ def running_browsers(proc_root="/proc"):
             "exe": exe,
             # Both are reported: which one Chrome draws on depends on its ozone
             # platform choice, which a browser's command line need not show.
-            # Often None: a running Chrome's /proc/<pid>/environ reads empty.
+            # None when /proc/<pid>/environ reads empty, as it sometimes does.
             "display": " ".join(
                 f"{k}={env[k]}" for k in ("DISPLAY", "WAYLAND_DISPLAY") if env.get(k)
             )
@@ -349,7 +392,16 @@ def running_browsers(proc_root="/proc"):
 
 
 def walk(root, depth):
-    """Directories holding a `Local State`, at most `depth` levels below `root` (None: any depth)."""
+    """Directories holding a `Local State`, at most `depth` levels below `root` (None: any depth).
+
+    `root` itself counts. A symlink to a directory, or a directory on another
+    filesystem, is looked at but not descended into: that finds a relocated
+    user-data-dir without following loops or wandering onto other disks.
+    """
+
+    def is_user_data_dir(path):
+        return os.path.isfile(os.path.join(path, "Local State"))
+
     try:
         device = os.stat(root).st_dev
     except OSError:
@@ -357,22 +409,26 @@ def walk(root, depth):
     stack = [(root, 0)]
     while stack:
         path, level = stack.pop()
-        if level and os.path.isfile(os.path.join(path, "Local State")):
+        if is_user_data_dir(path):
             yield path
             continue  # a user-data-dir holds no further user-data-dirs
         if depth is not None and level >= depth:
             continue
         try:
-            with os.scandir(path) as entries:
-                for e in entries:
-                    if (
-                        e.name not in PRUNE
-                        and e.is_dir(follow_symlinks=False)
-                        and e.stat(follow_symlinks=False).st_dev == device
-                    ):
-                        stack.append((e.path, level + 1))
+            entries = list(os.scandir(path))
         except OSError:
             continue  # unreadable: nothing of ours in there
+        for e in entries:
+            try:
+                if e.name in PRUNE or not e.is_dir():
+                    continue
+                if e.is_symlink() or e.stat().st_dev != device:
+                    if is_user_data_dir(e.path):
+                        yield e.path
+                    continue
+            except OSError:
+                continue  # vanished underfoot
+            stack.append((e.path, level + 1))
 
 
 def user_data_dirs(running, cache=False, scan=()):
@@ -421,7 +477,7 @@ def describe(udd, running):
         profiles.append(
             {
                 "dir": dirname,
-                "name": info.get("name"),
+                "name": info.get("name") if isinstance(info.get("name"), str) else None,
                 "exists": exists,
                 "chrome_signin": signed_in,
                 "sync": sync_on,
@@ -474,10 +530,11 @@ def extension_state(profile_path):
 
     storage = leveldb_dict(store)
     failure = value(b"lastAuthFailureReason")
+    uuid, org = value(b"accountUuid"), value(b"tokenOrg")
     out.update(
         {
-            "account_uuid": value(b"accountUuid"),
-            "org_uuid": (value(b"tokenOrg") or {}).get("uuid"),
+            "account_uuid": uuid if isinstance(uuid, str) else None,
+            "org_uuid": org.get("uuid") if isinstance(org, dict) else None,
             "signed_in": b"tokenScope" in storage and not failure,
             "auth_failure": failure,
             "browser_name": value(b"bridgeDisplayName")
@@ -520,10 +577,10 @@ def emails_for(uuids, profile_paths):
                 for uuid, needle in needles.items():
                     at = text.find(needle)
                     while at != -1:
-                        window = text[max(0, at - 600) : at + 600]
+                        start = max(0, at - 600)
                         near = min(
-                            EMAIL.finditer(window),
-                            key=lambda m: abs(m.start() - 600),
+                            EMAIL.finditer(text[start : at + 600]),
+                            key=lambda m: abs(m.start() - (at - start)),
                             default=None,
                         )
                         if near:
@@ -537,11 +594,17 @@ def emails_for(uuids, profile_paths):
 
 def collect(cache=False, scan=()):
     running = running_browsers()
-    dirs = [
-        d
-        for d in (describe(u, running) for u in user_data_dirs(running, cache, scan))
-        if d
-    ]
+    dirs, errors = [], []
+    for udd in user_data_dirs(running, cache, scan):
+        # Chrome's files are read as found, whatever shape they are in. One
+        # directory this cannot make sense of must not cost the whole report.
+        try:
+            d = describe(udd, running)
+        except Exception as e:  # noqa: BLE001
+            errors.append({"user_data_dir": udd, "error": f"{type(e).__name__}: {e}"})
+            continue
+        if d:
+            dirs.append(d)
     exts = [p["claude_extension"] for d in dirs for p in d["profiles"]]
     emails = emails_for(
         {e["account_uuid"] for e in exts if e.get("account_uuid")},
@@ -557,9 +620,10 @@ def collect(cache=False, scan=()):
             e["account_email"], e["email_source"] = emails.get(
                 e.get("account_uuid"), (None, None)
             )
-    known = {d["user_data_dir"] for d in dirs}
+    known = {d["user_data_dir"] for d in dirs} | {e["user_data_dir"] for e in errors}
     return {
         "user_data_dirs": dirs,
+        "errors": errors,
         "unmatched_running": {u: b for u, b in running.items() if u not in known},
     }
 
@@ -728,6 +792,8 @@ def main():
         notes.append(
             f"{stale} profile(s) listed in a Local State but missing on disk were left out (see --json)."
         )
+    for e in report["errors"]:
+        notes.append(f"Could not read {e['user_data_dir']}: {e['error']}")
     for u, b in report["unmatched_running"].items():
         notes.append(
             f"Running Chrome with no readable profile list: pid {b['pid']} {u}"

@@ -37,6 +37,7 @@ cp = _load()
 FAILED = []
 UUID_A = "11111111-2222-3333-4444-555555555555"
 UUID_B = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+SECRET = "SECRET-SENTINEL"  # stands in for every token the extension stores
 
 
 def check(name, got, want):
@@ -130,6 +131,66 @@ def test_parse_cmdline():
         False,
     )
     check("cmdline: no options", cp.parse_cmdline("/opt/x/chrome\0"), (True, {}))
+    spaced_dir = os.path.join(tempfile.mkdtemp(dir=TMP), "my dir")
+    os.makedirs(spaced_dir)
+    check(
+        "cmdline: space separated, URL straight after --user-data-dir",
+        cp.parse_cmdline(
+            f"/opt/x/chrome --user-data-dir={spaced_dir} https://example.invalid/a b --no-first-run"
+        )[1],
+        {"--user-data-dir": spaced_dir},
+    )
+    check(
+        "cmdline: NUL separated, URL straight after --user-data-dir",
+        cp.parse_cmdline(
+            "/opt/x/chrome\0--user-data-dir=/a/b\0https://example.invalid/\0"
+        )[1],
+        {"--user-data-dir": "/a/b"},
+    )
+    check(
+        "cmdline: relative --user-data-dir is taken from the browser's cwd",
+        cp.parse_cmdline("/opt/x/chrome\0--user-data-dir=rel/p\0", cwd="/base")[1],
+        {"--user-data-dir": "/base/rel/p"},
+    )
+    snap_exe = "/snap/chromium/1/usr/lib/chromium-browser/chrome"
+    check(
+        "default dir: snap's private $HOME is not used",
+        [
+            cp.default_user_data_dir(snap_exe, {"HOME": "/h/snap/chromium/1", **env})
+            for env in (
+                {"SNAP_USER_COMMON": "/h/snap/chromium/common"},
+                {"SNAP_REAL_HOME": "/h"},
+            )
+        ],
+        ["/h/snap/chromium/common/chromium"] * 2,
+    )
+
+
+def snappy_literal(data):
+    """`data` as Snappy that is one long literal (valid, just not compressed)."""
+    return (
+        varint(len(data)) + bytes([61 << 2]) + struct.pack("<H", len(data) - 1) + data
+    )
+
+
+def table_file(entries, compress):
+    """A LevelDB .ldb: one data block, {key: (sequence, value or None for a deletion)}."""
+
+    def block(pairs):
+        raw = b"".join(
+            varint(0) + varint(len(k)) + varint(len(v)) + k + v for k, v in pairs
+        ) + struct.pack("<II", 0, 1)  # one restart point, at offset 0
+        return (
+            snappy_literal(raw) + b"\x01" if compress else raw + b"\x00"
+        ) + b"\0" * 4
+
+    data = block(
+        (key + struct.pack("<Q", seq << 8 | (value is not None)), value or b"")
+        for key, (seq, value) in sorted(entries.items())
+    )
+    index = block([(b"\xff", varint(0) + varint(len(data) - 5))])
+    handles = varint(0) + varint(0) + varint(len(data)) + varint(len(index) - 5)
+    return data + index + handles.ljust(40, b"\0") + bytes.fromhex("57fb808b247547db")
 
 
 def test_leveldb():
@@ -154,6 +215,27 @@ def test_leveldb():
         cp.leveldb_dict(tmp),
         {b"a": b"new"},
     )
+    for compress in (False, True):
+        tmp = tempfile.mkdtemp(dir=TMP)
+        big = bytes(range(256)) * 20
+        write(
+            os.path.join(tmp, "000004.ldb"),
+            table_file(
+                {b"a": (5, b"table"), b"big": (6, big), b"gone": (7, None)}, compress
+            ),
+        )
+        write(
+            os.path.join(tmp, "000003.log"),
+            log_file({b"a": b"older", b"gone": b"x"}, sequence=1),
+        )
+        write(os.path.join(tmp, "000009.ldb"), b"not a table at all" * 10)
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            got = cp.leveldb_dict(tmp)
+        check(
+            f"leveldb: table ({'snappy' if compress else 'uncompressed'}) beats older log, bad file only warns",
+            (got, "000009.ldb" in err.getvalue()),
+            ({b"a": b"table", b"big": big}, True),
+        )
 
 
 def build_home(home):
@@ -184,13 +266,16 @@ def build_home(home):
         os.path.join(main, "Default"),
         accountUuid=UUID_A,
         tokenOrg={"uuid": "org-1"},
-        tokenScope="s",
+        tokenScope=SECRET,
+        codeVerifier=SECRET,
+        oauthState=SECRET,
+        accessToken=SECRET,
         bridgeDisplayName="laptop",
     )
     storage(
         os.path.join(main, "Profile 1"),
         accountUuid=UUID_B,
-        tokenScope="s",
+        tokenScope=SECRET,
         lastAuthFailureReason="session_expired",
     )
     write(
@@ -207,12 +292,32 @@ def build_home(home):
         ),
         log_file(
             {
+                # The account's own email sits next to its UUID at the very
+                # start of the value; another record's email follows later.
                 b"k": b'o"\x04uuid"\x24'
                 + UUID_B.encode()
-                + b'"\x0demail_address"\x11b@example.invalid{'
+                + b'"\x0demail_address"\x11b@example.invalid'
+                + b'"'
+                + b" " * 300
+                + b'"\x05email"\x15wrong@example.invalid{'
             }
         ),
     )
+    # Files this tool cannot make sense of: one directory is reported as an
+    # error, the other read as far as it goes.
+    write(
+        os.path.join(config, "broken", "Local State"),
+        {"profile": {"info_cache": {"Default": None}}},
+    )
+    odd = os.path.join(config, "odd")
+    user_data_dir(odd, {"Default": ({"name": 5}, extension(disable_reasons=[]))})
+    storage(
+        os.path.join(odd, "Default"), accountUuid=5, tokenOrg="x", tokenScope=SECRET
+    )
+    user_data_dir(
+        os.path.join(home, "elsewhere-real"), {"Default": ({"name": "moved"}, {})}
+    )
+    os.symlink(os.path.join(home, "elsewhere-real"), os.path.join(config, "linked"))
     write(os.path.join(config, "Electron App", "Local State"), {"os_crypt": {}})
     write(os.path.join(config, "Electron App", "Preferences"), {})
     write(os.path.join(config, "headless", "Local State"), {"os_crypt": {}})
@@ -232,12 +337,24 @@ def build_proc(proc, home):
     def process(pid, exe, cmdline):
         os.makedirs(os.path.join(proc, pid))
         os.symlink(exe, os.path.join(proc, pid, "exe"))
+        os.symlink(home, os.path.join(proc, pid, "cwd"))
         write(os.path.join(proc, pid, "cmdline"), cmdline)
         write(os.path.join(proc, pid, "environ"), f"HOME={home}\0DISPLAY=:7\0")
 
     work = os.path.join(home, "chrome", "work")
     write(os.path.join(work, "DevToolsActivePort"), "41000\n/devtools/browser/x\n")
     process("100", "/opt/google/chrome/chrome", "/opt/google/chrome/chrome")
+    # A later `chrome URL` hands its URL over and exits; it is not the root.
+    process(
+        "150",
+        "/opt/google/chrome/chrome",
+        "/opt/google/chrome/chrome https://example.invalid/",
+    )
+    process(
+        "600",
+        "/opt/google/chrome/chrome",
+        "/opt/google/chrome/chrome\0--user-data-dir=chrome/relative\0https://example.invalid/\0",
+    )
     process(
         "101",
         "/opt/google/chrome/chrome",
@@ -246,7 +363,7 @@ def build_proc(proc, home):
     process(
         "200",
         "/opt/google/chrome/chrome (deleted)",
-        f"/opt/google/chrome/chrome --user-data-dir={work} --remote-debugging-port=0 about:blank",
+        f"/opt/google/chrome/chrome --remote-debugging-port=0 --user-data-dir={work} about:blank",
     )
     process(
         "300",
@@ -277,7 +394,8 @@ def test_report():
                 "~/.config/google-chrome": (100, None, "DISPLAY=:7"),
                 "~/chrome/work": (200, "41000", "DISPLAY=:7"),
                 "/elsewhere/x": (300, None, "DISPLAY=:7"),
-                "?unknown-default-for:/somewhere/chrome": (500, None, "DISPLAY=:7"),
+                "?unknown-default-for:/somewhere/chrome:500": (500, None, "DISPLAY=:7"),
+                "~/chrome/relative": (600, None, "DISPLAY=:7"),
             },
         )
 
@@ -286,11 +404,14 @@ def test_report():
 
         default = [
             "~/.config/Electron App",
+            "~/.config/broken",
             "~/.config/google-chrome",
             "~/.config/headless",
+            "~/.config/odd",
             "~/.local/share/usage/accounts/x/chrome",
             "~/.local/state/ext/profile",
             "~/chrome/work",
+            "~/elsewhere-real",  # reached through the ~/.config/linked symlink
         ]
         check("discovery: default roots, depth limited", found(), default)
         check(
@@ -303,16 +424,58 @@ def test_report():
             found(scan=[os.path.join(home, "src")]),
             sorted(default + ["~/src/repo/tmp/chrome-profile"]),
         )
+        check(
+            "discovery: --scan of a user-data-dir itself",
+            found(scan=[os.path.join(home, "src", "repo", "tmp", "chrome-profile")]),
+            sorted(default + ["~/src/repo/tmp/chrome-profile"]),
+        )
+
+        def run(*argv):
+            text = io.StringIO()
+            with contextlib.redirect_stdout(text):
+                sys.argv = ["chrome-profiles.py", *argv]
+                cp.main()
+            return text.getvalue()
 
         real_running, cp.running_browsers = cp.running_browsers, lambda: running
         try:
             report = cp.collect()
-            out = io.StringIO()
-            with contextlib.redirect_stdout(out):
-                sys.argv = ["chrome-profiles.py", "--web-logins"]
-                cp.main()
+            out = io.StringIO(run("--web-logins"))
+            markdown, as_json = run("--format", "markdown"), run("--json")
         finally:
             cp.running_browsers = real_running
+        check("json: main() prints the same report", json.loads(as_json), report)
+        check(
+            "markdown: a header, a rule and one line per existing profile",
+            [line.count("|") for line in markdown.split("\n\n")[0].splitlines()],
+            [12]
+            * (
+                2
+                + sum(
+                    p["exists"] for d in report["user_data_dirs"] for p in d["profiles"]
+                )
+            ),
+        )
+        check(
+            "errors: an unreadable directory is reported, not fatal",
+            (
+                [e["user_data_dir"].replace(home, "~") for e in report["errors"]],
+                "Could not read" in out.getvalue(),
+            ),
+            (["~/.config/broken"], True),
+        )
+        odd = {
+            d["user_data_dir"].replace(home, "~"): d for d in report["user_data_dirs"]
+        }["~/.config/odd"]["profiles"][0]
+        check(
+            "errors: wrong-typed name, account and org are dropped",
+            (
+                odd["name"],
+                odd["claude_extension"]["account_uuid"],
+                odd["claude_extension"]["org_uuid"],
+            ),
+            (None, None, None),
+        )
         dirs = {
             d["user_data_dir"].replace(home, "~"): d for d in report["user_data_dirs"]
         }
@@ -320,8 +483,12 @@ def test_report():
             "report: Electron app left out, headless dir kept, running-only dir has no profile list",
             (sorted(dirs), sorted(report["unmatched_running"])),
             (
-                sorted(default[1:]),
-                ["/elsewhere/x", "?unknown-default-for:/somewhere/chrome"],
+                sorted(set(default) - {"~/.config/Electron App", "~/.config/broken"}),
+                [
+                    "/elsewhere/x",
+                    os.path.join(home, "chrome", "relative"),
+                    "?unknown-default-for:/somewhere/chrome:500",
+                ],
             ),
         )
         main = {p["dir"]: p for p in dirs["~/.config/google-chrome"]["profiles"]}
@@ -400,9 +567,9 @@ def test_report():
             (False, True),
         )
         check(
-            "table: tokens never printed",
-            '"s"' in json.dumps(report) or "tokenScope" in json.dumps(report),
-            False,
+            "secrets: nothing from the extension's token storage in any output",
+            [SECRET in text for text in (out.getvalue(), markdown, as_json)],
+            [False] * 3,
         )
     finally:
         for k, v in saved.items():
