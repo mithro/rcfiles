@@ -14,7 +14,7 @@
 [bugzilla]
 	username = mithro@mithis.com
 [push]
-	default = matching
+	default = simple
 [rerere]
 	enabled = true
 [rietveld]
